@@ -2,24 +2,21 @@
 
 English idea → starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
 
-## Next phase (v6) implemented
+## Next phase (v8) implemented
 
-### 1) Build-level scaffold verification
-- Added `verify_scaffold_build(...)` to run tool-based checks on generated scaffolds.
-- Supports Python/JavaScript/C++/C# verification when local tools exist.
-- CLI supports `--verify-scaffold-build`.
+### 1) Batch artifact pipelines
+- Batch mode now supports per-item artifact generation.
+- Added `--batch-artifact-dir` to store generated code files per batch item.
+- Added `--batch-include-explain` to store explain-plan payloads per item.
 
-### 2) Explain-plan export to file
-- CLI supports `--explain-plan-file` to write plan diagnostics JSON to disk.
-- Useful for CI artifacts and debugging pipelines.
+### 2) Batch observability improvements
+- Batch reports now include `generated_at` timestamps.
+- Explain output now tracks both configured provider and runtime resolved provider.
 
-### 3) Evaluation buildability metric
-- Eval now computes a new buildability score by scaffolding each case and running build checks.
-- Existing structure, intent coverage, and determinism metrics are retained.
-
-### 4) Prior v5 capabilities retained
-- Planner provider abstraction: `auto`, `heuristic`, `openai`.
-- Optional strict safety mode via `--strict-safety`.
+### 3) Existing capabilities retained
+- Scaffold verification + scaffold build checks.
+- Explain plan console/file export.
+- Strict safety mode and planner provider selection.
 
 ## Quick start
 
@@ -28,24 +25,24 @@ pip install -r requirements.txt
 python -m translator.cli --target python --prompt "Create player jump on space" --mode gameplay --verify
 ```
 
-## Scaffold + build verification
+## Batch mode with artifacts
+
+Create `batch.jsonl`:
+
+```json
+{"prompt":"Create a player that can jump","target":"python"}
+{"prompt":"Spawn enemy when timer reaches zero","target":"cpp"}
+```
+
+Run:
 
 ```bash
 python -m translator.cli \
   --target python \
-  --prompt "Create player jump on space" \
-  --scaffold-dir artifacts/py_app \
-  --verify-scaffold \
-  --verify-scaffold-build
-```
-
-## Explain plan artifact
-
-```bash
-python -m translator.cli \
-  --target cpp \
-  --prompt "Spawn enemy when timer reaches zero" \
-  --explain-plan-file artifacts/plan.json
+  --batch-input batch.jsonl \
+  --batch-report artifacts/batch_report.json \
+  --batch-artifact-dir artifacts/batch_items \
+  --batch-include-explain
 ```
 
 ## Evaluation

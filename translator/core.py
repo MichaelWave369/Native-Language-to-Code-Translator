@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -45,23 +47,33 @@ class EnglishToCodeTranslator:
         self._heuristic = HeuristicPlanner()
         self.planner = planner
         self.planner_provider = planner_provider
+        self._last_resolved_provider = "custom" if planner is not None else planner_provider
         self.renderers = build_registry()
 
     @property
     def supported_targets(self) -> set[str]:
         return set(self.renderers.keys())
 
+    @property
+    def last_resolved_provider(self) -> str:
+        return self._last_resolved_provider
+
     def _get_planner(self) -> object:
         if self.planner is not None:
+            self._last_resolved_provider = "custom"
             return self.planner
         if self.planner_provider == "heuristic":
+            self._last_resolved_provider = "heuristic"
             return self._heuristic
         if self.planner_provider == "openai":
+            self._last_resolved_provider = "openai"
             return OpenAISemanticPlanner()
 
         try:
+            self._last_resolved_provider = "openai"
             return OpenAISemanticPlanner()
         except Exception:
+            self._last_resolved_provider = "heuristic"
             return self._heuristic
 
     def _canonicalize_intent(self, intent: ParsedIntent) -> ParsedIntent:
@@ -91,6 +103,7 @@ class EnglishToCodeTranslator:
             planner = self._get_planner()
             raw_intent = planner.plan(prompt, mode=mode)
         except Exception:
+            self._last_resolved_provider = "heuristic-fallback"
             raw_intent = self._heuristic.plan(prompt, mode=mode)
         return self._canonicalize_intent(raw_intent)
 
@@ -127,6 +140,7 @@ class EnglishToCodeTranslator:
             "target": target,
             "mode": mode,
             "planner_provider": self.planner_provider,
+            "resolved_provider": self._last_resolved_provider,
             "intent": {
                 "entities": plan.intent.entities,
                 "actions": plan.intent.actions,
@@ -170,6 +184,91 @@ class EnglishToCodeTranslator:
         output = renderer.render(combined_prompt, plan.intent, mode=mode, plan=plan)
         self._enforce_safety(output, strict_safety=strict_safety)
         return output
+
+    def _slug(self, text: str) -> str:
+        cleaned = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+        return cleaned[:48] or "item"
+
+    def translate_batch(
+        self,
+        items: list[dict[str, Any]],
+        default_target: str,
+        default_mode: str = "gameplay",
+        strict_safety: bool = False,
+        artifact_dir: str | None = None,
+        include_explain: bool = False,
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        artifacts_root = Path(artifact_dir) if artifact_dir else None
+        if artifacts_root:
+            artifacts_root.mkdir(parents=True, exist_ok=True)
+
+        for idx, item in enumerate(items):
+            prompt = str(item.get("prompt", "")).strip()
+            target = str(item.get("target", default_target)).strip()
+            mode = str(item.get("mode", default_mode)).strip()
+            context = item.get("context")
+            refine = bool(item.get("refine", False))
+
+            try:
+                output = self.translate(
+                    prompt=prompt,
+                    target=target,
+                    mode=mode,
+                    context=context,
+                    refine=refine,
+                    strict_safety=strict_safety,
+                )
+                payload: dict[str, Any] = {
+                    "index": idx,
+                    "ok": True,
+                    "target": target,
+                    "mode": mode,
+                    "resolved_provider": self._last_resolved_provider,
+                    "output": output,
+                }
+
+                if include_explain:
+                    payload["explain"] = self.explain_plan(prompt, target=target, mode=mode)
+
+                if artifacts_root:
+                    item_dir = artifacts_root / f"{idx:03d}_{self._slug(prompt)}"
+                    item_dir.mkdir(parents=True, exist_ok=True)
+                    output_file = item_dir / f"output.{target}.txt"
+                    output_file.write_text(output, encoding="utf-8")
+                    payload["artifact_output_file"] = str(output_file)
+
+                    if include_explain:
+                        explain_file = item_dir / "plan.json"
+                        explain_file.write_text(json.dumps(payload["explain"], indent=2), encoding="utf-8")
+                        payload["artifact_plan_file"] = str(explain_file)
+
+                results.append(payload)
+            except Exception as exc:
+                results.append(
+                    {
+                        "index": idx,
+                        "ok": False,
+                        "target": target,
+                        "mode": mode,
+                        "resolved_provider": self._last_resolved_provider,
+                        "error": str(exc),
+                    }
+                )
+        return results
+
+    def write_batch_report(self, batch_results: list[dict[str, Any]], output_file: str) -> str:
+        destination = Path(output_file)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        summary = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "total": len(batch_results),
+            "ok": sum(1 for r in batch_results if r.get("ok")),
+            "failed": sum(1 for r in batch_results if not r.get("ok")),
+            "results": batch_results,
+        }
+        destination.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        return str(destination)
 
     def scaffold_project(self, prompt: str, target: str, output_dir: str, mode: str = "gameplay") -> str:
         root = Path(output_dir)

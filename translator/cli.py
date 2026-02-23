@@ -7,10 +7,24 @@ from pathlib import Path
 from .core import EnglishToCodeTranslator
 
 
+def _load_batch_items(path: str) -> list[dict]:
+    source = Path(path)
+    text = source.read_text(encoding="utf-8").strip()
+    if not text:
+        return []
+    if source.suffix.lower() == ".jsonl":
+        return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+    payload = json.loads(text)
+    if not isinstance(payload, list):
+        raise ValueError("Batch input JSON must be a list of objects")
+    return payload
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="English-to-code translator")
     parser.add_argument("--target", required=True)
-    parser.add_argument("--prompt", required=True, help="English description to translate")
+    parser.add_argument("--prompt", required=False, help="English description to translate")
     parser.add_argument(
         "--mode",
         default="gameplay",
@@ -37,6 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--blueprint-name", default="BP_GeneratedFeature")
     parser.add_argument("--explain-plan", action="store_true", help="Print planner/IR explanation as JSON")
     parser.add_argument("--explain-plan-file", help="Optional file path to write explain-plan JSON")
+    parser.add_argument("--batch-input", help="Path to JSON/JSONL batch prompts")
+    parser.add_argument("--batch-report", help="Path to write batch run report JSON")
+    parser.add_argument("--batch-artifact-dir", help="Folder to store per-item batch output artifacts")
+    parser.add_argument("--batch-include-explain", action="store_true", help="Include explain payload for each batch item")
     return parser
 
 
@@ -45,6 +63,26 @@ def main() -> None:
     args = parser.parse_args()
 
     translator = EnglishToCodeTranslator(planner_provider=args.planner_provider)
+
+    if args.batch_input:
+        items = _load_batch_items(args.batch_input)
+        results = translator.translate_batch(
+            items,
+            default_target=args.target,
+            default_mode=args.mode,
+            strict_safety=args.strict_safety,
+            artifact_dir=args.batch_artifact_dir,
+            include_explain=args.batch_include_explain,
+        )
+        print(json.dumps(results, indent=2))
+        if args.batch_report:
+            destination = translator.write_batch_report(results, args.batch_report)
+            print(f"\n[batch-report] written: {destination}")
+        return
+
+    if not args.prompt:
+        raise ValueError("--prompt is required unless --batch-input is provided")
+
     context = None
     if args.context_file:
         context = Path(args.context_file).read_text(encoding="utf-8")

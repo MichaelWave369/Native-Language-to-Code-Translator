@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -33,6 +34,7 @@ def test_explain_plan_returns_ir_and_steps() -> None:
     )
     assert explanation["target"] == "cpp"
     assert explanation["planner_provider"] == "auto"
+    assert explanation["resolved_provider"] in {"custom", "heuristic", "heuristic-fallback", "openai"}
     assert "intent" in explanation
     assert "ir" in explanation
     assert len(explanation["steps"]) >= 3
@@ -128,9 +130,56 @@ def test_planner_provider_heuristic_is_selectable() -> None:
     translator = EnglishToCodeTranslator(planner_provider="heuristic")
     out = translator.translate("Create a player that can jump", "python")
     assert "GeneratedFeature" in out
+    assert translator.last_resolved_provider == "heuristic"
 
 
 def test_strict_safety_blocks_unsafe_prompt() -> None:
     translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
     with pytest.raises(ValueError):
         translator.translate("Please run rm -rf / immediately", "python", strict_safety=True)
+
+
+def test_batch_translate_and_report(tmp_path) -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    batch = [
+        {"prompt": "Create a player that can jump", "target": "python"},
+        {"prompt": "Spawn enemy when timer reaches zero", "target": "cpp"},
+    ]
+    results = translator.translate_batch(batch, default_target="python")
+    assert len(results) == 2
+    assert all(item["ok"] for item in results)
+
+    report_path = translator.write_batch_report(results, str(tmp_path / "report.json"))
+    payload = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report_path.endswith("report.json")
+    assert payload["total"] == 2
+    assert payload["ok"] == 2
+
+
+def test_batch_translate_with_artifacts_and_explain(tmp_path) -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    batch = [
+        {"prompt": "Create a player that can jump", "target": "python"},
+        {"prompt": "Spawn enemy when timer reaches zero", "target": "cpp"},
+    ]
+    artifact_dir = tmp_path / "artifacts"
+    results = translator.translate_batch(
+        batch,
+        default_target="python",
+        artifact_dir=str(artifact_dir),
+        include_explain=True,
+    )
+    assert len(results) == 2
+    assert all(item["ok"] for item in results)
+    assert all("artifact_output_file" in item for item in results)
+    assert all("artifact_plan_file" in item for item in results)
+    assert all(Path(item["artifact_output_file"]).exists() for item in results)
+    assert all(Path(item["artifact_plan_file"]).exists() for item in results)
+
+
+def test_batch_report_contains_generated_at(tmp_path) -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    results = [{"index": 0, "ok": True, "target": "python", "mode": "gameplay", "output": "x"}]
+    report = translator.write_batch_report(results, str(tmp_path / "batch.json"))
+    payload = json.loads(Path(report).read_text(encoding="utf-8"))
+    assert "generated_at" in payload
