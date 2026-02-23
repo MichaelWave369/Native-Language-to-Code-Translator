@@ -1,4 +1,4 @@
-# Nevora English-to-Code Translator
+# Native-Language-to-Code Translator
 
 Translate natural-language ideas into starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
 
