@@ -48,6 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--assistant-report", help="Optional batch report JSON path used by assistant guidance")
     parser.add_argument("--warm-cache-file", help="Optional text file with one prompt per line to pre-warm plan cache")
     parser.add_argument("--assistant-report-advice", action="store_true", help="Print optimization advice derived from --assistant-report")
+    parser.add_argument("--assistant-runbook-file", help="Write assistant runbook JSON to this file")
+    parser.add_argument("--benchmark-swarm", action="store_true", help="Benchmark worker candidates on current batch input")
+    parser.add_argument("--benchmark-workers", default="1,2,4", help="Comma-separated worker candidates for --benchmark-swarm")
     parser.add_argument(
         "--audio-output-language",
         default="english",
@@ -135,6 +138,18 @@ def main() -> None:
             swarm_workers=resolved_workers,
         )
         print(json.dumps(results, indent=2))
+        if args.benchmark_swarm:
+            candidates = [int(x.strip()) for x in args.benchmark_workers.split(",") if x.strip()]
+            bench = translator.benchmark_swarm_configs(
+                items,
+                default_target=args.target,
+                default_mode=args.mode,
+                worker_candidates=candidates,
+                default_source_language=args.source_language,
+            )
+            print("\n[swarm-benchmark]")
+            print(json.dumps(bench, indent=2))
+
         if args.batch_report:
             destination = translator.write_batch_report(results, args.batch_report)
             print(f"\n[batch-report] written: {destination}")
@@ -230,6 +245,28 @@ def main() -> None:
         )
         print("\n[assistant-guide]")
         print(json.dumps(guide, indent=2))
+
+        if args.assistant_report_advice:
+            if report_payload is None:
+                raise ValueError("--assistant-report-advice requires --assistant-report")
+            advice = translator.analyze_batch_report(report_payload)
+            print("\n[assistant-report-advice]")
+            print(json.dumps(advice, indent=2))
+
+        if args.assistant_runbook_file:
+            runbook = translator.generate_assistant_runbook(
+                prompt=prompt,
+                target=args.target,
+                mode=args.mode,
+                source_language=args.source_language,
+                engine=args.engine,
+                has_asset_library=bool(args.asset_library),
+                batch_report=report_payload,
+            )
+            destination = Path(args.assistant_runbook_file)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(runbook, indent=2), encoding="utf-8")
+            print(f"\n[assistant-runbook] written: {destination}")
 
     if args.audio_output:
         audio_path = translator.synthesize_audio_output(

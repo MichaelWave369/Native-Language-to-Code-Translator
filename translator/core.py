@@ -534,6 +534,92 @@ class EnglishToCodeTranslator:
             "recommendations": recommendations,
         }
 
+    def benchmark_swarm_configs(
+        self,
+        items: list[dict[str, Any]],
+        default_target: str,
+        default_mode: str = "gameplay",
+        worker_candidates: Optional[list[int]] = None,
+        default_source_language: str = "english",
+    ) -> dict[str, Any]:
+        candidates = worker_candidates or [1, 2, 4]
+        cleaned = sorted({max(1, int(c)) for c in candidates})
+        timings: list[dict[str, Any]] = []
+
+        for workers in cleaned:
+            started = perf_counter()
+            self.translate_batch(
+                items,
+                default_target=default_target,
+                default_mode=default_mode,
+                strict_safety=False,
+                include_explain=False,
+                fail_fast=False,
+                verify_generated=False,
+                verify_build=False,
+                default_source_language=default_source_language,
+                swarm_workers=workers,
+            )
+            elapsed_ms = round((perf_counter() - started) * 1000, 3)
+            timings.append({"workers": workers, "elapsed_ms": elapsed_ms})
+
+        best = min(timings, key=lambda t: t["elapsed_ms"]) if timings else {"workers": 1, "elapsed_ms": 0.0}
+        return {
+            "batch_size": len(items),
+            "timings": timings,
+            "best_workers": best["workers"],
+            "best_elapsed_ms": best["elapsed_ms"],
+        }
+
+    def generate_assistant_runbook(
+        self,
+        prompt: str,
+        target: str,
+        mode: str = "gameplay",
+        source_language: str = "english",
+        engine: Optional[str] = None,
+        has_asset_library: bool = False,
+        batch_report: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        guide = self.assistant_guide(
+            prompt=prompt,
+            target=target,
+            mode=mode,
+            source_language=source_language,
+            batch_report=batch_report,
+        )
+        checklist = [
+            "Validate prompt contains clear entities/actions/conditions.",
+            "Run --verify for single outputs before scaffolding.",
+            "Use --batch-verify-output and --batch-verify-build for CI runs.",
+        ]
+        commands = [guide["suggested_command"]]
+
+        if engine in self.ASSET_ENGINES:
+            checklist.append("Ensure asset-library JSON is current and paths resolve in project.")
+            if has_asset_library:
+                commands.append(
+                    f"python -m translator.cli --target {target} --engine {engine} --asset-library ./assets.json --prompt '{prompt}' --export-engine-manifest artifacts/{engine}_manifest.json"
+                )
+
+        if batch_report:
+            analysis = self.analyze_batch_report(batch_report)
+            checklist.extend(analysis["recommendations"])
+            commands.append(
+                f"python -m translator.cli --target {target} --batch-input batch.jsonl --swarm-workers {analysis['suggested_swarm_workers']} --batch-report artifacts/batch_report.json"
+            )
+
+        return {
+            "title": "Nevora Assistant Runbook",
+            "target": target,
+            "mode": mode,
+            "source_language": source_language,
+            "engine": engine,
+            "checklist": checklist,
+            "commands": commands,
+            "guide": guide,
+        }
+
     def warm_plan_cache(self, prompts: list[str], mode: str = "gameplay", source_language: str = "english") -> dict[str, Any]:
         warmed = 0
         for prompt in prompts:

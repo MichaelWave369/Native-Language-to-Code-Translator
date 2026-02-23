@@ -451,3 +451,27 @@ def test_write_batch_report_includes_p95(tmp_path) -> None:
     report_path = translator.write_batch_report(results, str(tmp_path / "batch.json"))
     payload = json.loads(Path(report_path).read_text(encoding="utf-8"))
     assert "p95_elapsed_ms" in payload
+
+
+def test_benchmark_swarm_configs_returns_best() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    batch = [
+        {"prompt": "Create jump", "target": "python"},
+        {"prompt": "Spawn enemy when timer reaches zero", "target": "cpp"},
+    ]
+    bench = translator.benchmark_swarm_configs(batch, default_target="python", worker_candidates=[1, 2])
+    assert bench["batch_size"] == 2
+    assert bench["timings"]
+    assert bench["best_workers"] in {1, 2}
+
+
+def test_generate_assistant_runbook_includes_checklist() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    runbook = translator.generate_assistant_runbook(
+        prompt="Create jump",
+        target="python",
+        batch_report={"total": 2, "success_rate": 1.0, "avg_elapsed_ms": 10.0, "verify_output_rate": 1.0, "verify_build_rate": 1.0},
+    )
+    assert runbook["title"] == "Nevora Assistant Runbook"
+    assert runbook["checklist"]
+    assert runbook["commands"]

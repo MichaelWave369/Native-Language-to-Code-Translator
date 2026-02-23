@@ -1,8 +1,8 @@
-# Native-Language-to-Code Translator
+# Nevora English-to-Code Translator
 
 Translate natural-language ideas into starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
 
-## Next phase (v16) implemented
+## Next phase (v17) implemented
 
 ### 1) Full optimization pass
 - Added fast plan reuse with an internal plan cache (`_plan_cache`) to avoid repeated planning work for identical prompt/mode combinations.
@@ -48,6 +48,15 @@ Translate natural-language ideas into starter code for Python, Blueprint, C++, C
   - `--assistant-report-advice` (requires `--assistant-report`)
   - `--swarm-workers 0` now means auto-select workers.
 - Batch reports now include `p95_elapsed_ms` for tail-latency visibility.
+
+
+### 7) Assistant runbook + swarm benchmarking
+- Added `benchmark_swarm_configs(...)` to quickly compare worker candidates and pick best-performing concurrency.
+- Added `generate_assistant_runbook(...)` to emit a structured operational runbook (checklist + commands + assistant guide).
+- New CLI flags:
+  - `--benchmark-swarm`
+  - `--benchmark-workers 1,2,4`
+  - `--assistant-runbook-file artifacts/runbook.json`
 
 ## Asset library format
 
