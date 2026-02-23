@@ -523,3 +523,35 @@ def test_multi_codegen_dispatch_unknown_provider() -> None:
 
     with pytest.raises(ValueError):
         generate_code("unknown", "Create jump", target="python")
+
+
+
+def test_world_builder_prompt_contains_all_stages() -> None:
+    from translator.generators.world_builder import build_world_builder_prompt
+
+    prompt = build_world_builder_prompt(
+        environment="Forest",
+        characters="Player and enemy",
+        rules="Health and gravity",
+        events="Enemy attacks",
+    )
+    assert "1) Environment" in prompt
+    assert "2) Characters" in prompt
+    assert "3) Rules" in prompt
+    assert "4) Events" in prompt
+
+
+def test_world_builder_parse_response_valid() -> None:
+    from translator.generators.world_builder import parse_world_builder_response
+
+    raw = '{"environment":"env code","characters":"char code","rules":"rules code","events":"events code","main":"main code"}'
+    parsed = parse_world_builder_response(raw)
+    assert parsed["environment"] == "env code"
+    assert parsed["main"] == "main code"
+
+
+def test_world_builder_parse_response_missing_keys() -> None:
+    from translator.generators.world_builder import parse_world_builder_response
+
+    with pytest.raises(RuntimeError):
+        parse_world_builder_response('{"environment":"x"}')
