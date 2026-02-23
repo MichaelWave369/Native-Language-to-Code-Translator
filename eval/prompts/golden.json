@@ -1,0 +1,12 @@
+[
+  {
+    "prompt": "Create a player jump on space and play sound",
+    "target": "python",
+    "must_contain": ["GeneratedFeature", "Actions"]
+  },
+  {
+    "prompt": "Spawn enemy when timer reaches zero",
+    "target": "cpp",
+    "must_contain": ["GeneratedFeature", "Run"]
+  }
+]
