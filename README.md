@@ -1,29 +1,27 @@
 # Nevora English-to-Code Translator
 
-English idea → starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
+Translate ideas into code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
 
-## Next phase (v10) implemented
+## Next phase (v11) implemented
 
-### 1) Batch verification passes
-- Added per-item batch verification options:
-  - generated output verification (`verify_output`)
-  - scaffold build verification (`verify_scaffold_build`)
-- CLI flags:
-  - `--batch-verify-output`
-  - `--batch-verify-build`
+### 1) Multilingual prompt input
+- Added `source_language` support so prompts can be written in:
+  - `english`
+  - `spanish`
+  - `french`
+  - `german`
+  - `portuguese`
+- Prompts are normalized into English before planning so existing target renderers work consistently.
 
-### 2) Verification quality gates
-- Added CI gates for verification rates:
-  - `--batch-min-verify-output-rate`
-  - `--batch-min-verify-build-rate`
-- Existing success-rate gate is still supported:
-  - `--batch-min-success-rate`
+### 2) Multilingual explainability and reporting
+- Explain-plan now includes:
+  - `source_language`
+  - `normalized_prompt`
+- Batch reports now include `source_language_counts` for observability across mixed-language runs.
 
-### 3) Richer batch report metrics
-- Batch report now includes:
-  - `verify_output_ok`, `verify_build_ok`
-  - `verify_output_rate`, `verify_build_rate`
-  - `success_rate`, `target_counts`, `resolved_provider_counts`, `generated_at`
+### 3) Existing v10 batch verification/gates retained
+- `--batch-verify-output`, `--batch-verify-build`
+- `--batch-min-success-rate`, `--batch-min-verify-output-rate`, `--batch-min-verify-build-rate`
 
 ## Quick start
 
@@ -32,11 +30,21 @@ pip install -r requirements.txt
 python -m translator.cli --target python --prompt "Create player jump on space" --mode gameplay --verify
 ```
 
-## Batch mode with full quality gates
+## Spanish input example
 
 ```bash
 python -m translator.cli \
   --target python \
+  --source-language spanish \
+  --prompt "Cuando jugador saltar"
+```
+
+## Batch mode with language mix + quality gates
+
+```bash
+python -m translator.cli \
+  --target python \
+  --source-language english \
   --batch-input batch.jsonl \
   --batch-report artifacts/batch_report.json \
   --batch-artifact-dir artifacts/batch_items \

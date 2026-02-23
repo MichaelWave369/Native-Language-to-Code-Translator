@@ -24,11 +24,17 @@ def _load_batch_items(path: str) -> list[dict]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="English-to-code translator")
     parser.add_argument("--target", required=True)
-    parser.add_argument("--prompt", required=False, help="English description to translate")
+    parser.add_argument("--prompt", required=False, help="Prompt in your selected source language")
     parser.add_argument(
         "--mode",
         default="gameplay",
         choices=["gameplay", "automation", "video-processing", "web-backend"],
+    )
+    parser.add_argument(
+        "--source-language",
+        default="english",
+        choices=["english", "spanish", "french", "german", "portuguese"],
+        help="Input prompt language",
     )
     parser.add_argument(
         "--planner-provider",
@@ -94,6 +100,7 @@ def main() -> None:
             fail_fast=args.batch_fail_fast,
             verify_generated=args.batch_verify_output,
             verify_build=args.batch_verify_build,
+            default_source_language=args.source_language,
         )
         print(json.dumps(results, indent=2))
         if args.batch_report:
@@ -151,11 +158,17 @@ def main() -> None:
         context=context,
         refine=args.refine,
         strict_safety=args.strict_safety,
+        source_language=args.source_language,
     )
     print(output)
 
     if args.explain_plan or args.explain_plan_file:
-        explanation = translator.explain_plan(args.prompt, target=args.target, mode=args.mode)
+        explanation = translator.explain_plan(
+            args.prompt,
+            target=args.target,
+            mode=args.mode,
+            source_language=args.source_language,
+        )
         if args.explain_plan:
             print("\n[plan]")
             print(json.dumps(explanation, indent=2))

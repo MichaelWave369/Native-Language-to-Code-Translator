@@ -25,6 +25,7 @@ from translator.targets.registry import build_registry
 class EnglishToCodeTranslator:
     MODES = {"gameplay", "automation", "video-processing", "web-backend"}
     PLANNER_PROVIDERS = {"auto", "heuristic", "openai"}
+    SOURCE_LANGUAGES = {"english", "spanish", "french", "german", "portuguese"}
     BLOCKED_PATTERNS = [
         "rm -rf /",
         "shutdown",
@@ -33,6 +34,69 @@ class EnglishToCodeTranslator:
         "os.system(\"rm",
         "subprocess.run(['rm",
     ]
+
+    LANGUAGE_TOKEN_MAP: dict[str, dict[str, str]] = {
+        "spanish": {
+            "jugador": "player",
+            "enemigo": "enemy",
+            "saltar": "jump",
+            "mover": "move",
+            "cuando": "when",
+            "si": "if",
+            "colision": "collision",
+            "presionado": "pressed",
+            "cero": "zero",
+            "guardar": "save",
+            "deshabilitar": "disable",
+            "sonido": "sound",
+            "animacion": "animation",
+        },
+        "french": {
+            "joueur": "player",
+            "ennemi": "enemy",
+            "sauter": "jump",
+            "deplacer": "move",
+            "quand": "when",
+            "si": "if",
+            "collision": "collision",
+            "appuye": "pressed",
+            "zero": "zero",
+            "sauvegarder": "save",
+            "desactiver": "disable",
+            "son": "sound",
+            "animation": "animation",
+        },
+        "german": {
+            "spieler": "player",
+            "gegner": "enemy",
+            "springen": "jump",
+            "bewegen": "move",
+            "wenn": "when",
+            "falls": "if",
+            "kollision": "collision",
+            "gedruckt": "pressed",
+            "null": "zero",
+            "speichern": "save",
+            "deaktivieren": "disable",
+            "ton": "sound",
+            "animation": "animation",
+        },
+        "portuguese": {
+            "jogador": "player",
+            "inimigo": "enemy",
+            "pular": "jump",
+            "mover": "move",
+            "quando": "when",
+            "se": "if",
+            "colisao": "collision",
+            "pressionado": "pressed",
+            "zero": "zero",
+            "salvar": "save",
+            "desativar": "disable",
+            "som": "sound",
+            "animacao": "animation",
+        },
+    }
 
     def __init__(
         self,
@@ -98,6 +162,21 @@ class EnglishToCodeTranslator:
             if pattern in lowered:
                 raise ValueError(f"Safety policy blocked content containing pattern: {pattern}")
 
+    def _normalize_prompt_language(self, prompt: str, source_language: str = "english") -> str:
+        language = source_language.lower().strip()
+        if language not in self.SOURCE_LANGUAGES:
+            supported = ", ".join(sorted(self.SOURCE_LANGUAGES))
+            raise ValueError(f"Unsupported source_language '{source_language}'. Supported: {supported}")
+
+        if language == "english":
+            return prompt
+
+        token_map = self.LANGUAGE_TOKEN_MAP.get(language, {})
+        normalized = prompt
+        for source_token, english_token in token_map.items():
+            normalized = re.sub(rf"\b{re.escape(source_token)}\b", english_token, normalized, flags=re.IGNORECASE)
+        return normalized
+
     def plan_intent(self, prompt: str, mode: str = "gameplay") -> ParsedIntent:
         try:
             planner = self._get_planner()
@@ -134,11 +213,20 @@ class EnglishToCodeTranslator:
         state_model = {"active": "bool", "last_event": "string", "status": "string"}
         return GenerationPlan(intent=intent, ir=ir, steps=steps, state_model=state_model)
 
-    def explain_plan(self, prompt: str, target: str, mode: str = "gameplay") -> dict[str, Any]:
-        plan = self.build_generation_plan(prompt, mode=mode)
+    def explain_plan(
+        self,
+        prompt: str,
+        target: str,
+        mode: str = "gameplay",
+        source_language: str = "english",
+    ) -> dict[str, Any]:
+        normalized_prompt = self._normalize_prompt_language(prompt, source_language=source_language)
+        plan = self.build_generation_plan(normalized_prompt, mode=mode)
         return {
             "target": target,
             "mode": mode,
+            "source_language": source_language,
+            "normalized_prompt": normalized_prompt,
             "planner_provider": self.planner_provider,
             "resolved_provider": self._last_resolved_provider,
             "intent": {
@@ -165,6 +253,7 @@ class EnglishToCodeTranslator:
         context: Optional[str] = None,
         refine: bool = False,
         strict_safety: bool = False,
+        source_language: str = "english",
     ) -> str:
         if mode not in self.MODES:
             raise ValueError(f"Unsupported mode '{mode}'. Supported: {', '.join(sorted(self.MODES))}")
@@ -174,9 +263,14 @@ class EnglishToCodeTranslator:
             supported = ", ".join(sorted(self.supported_targets))
             raise ValueError(f"Unsupported target '{target}'. Supported: {supported}")
 
-        combined_prompt = prompt
-        if refine and context:
-            combined_prompt = f"{prompt}\n\nPrevious output context:\n{context}"
+        normalized_prompt = self._normalize_prompt_language(prompt, source_language=source_language)
+        normalized_context = None
+        if context is not None:
+            normalized_context = self._normalize_prompt_language(context, source_language=source_language)
+
+        combined_prompt = normalized_prompt
+        if refine and normalized_context:
+            combined_prompt = f"{normalized_prompt}\n\nPrevious output context:\n{normalized_context}"
 
         self._enforce_safety(combined_prompt, strict_safety=strict_safety)
         plan = self.build_generation_plan(combined_prompt, mode=mode)
@@ -200,6 +294,7 @@ class EnglishToCodeTranslator:
         fail_fast: bool = False,
         verify_generated: bool = False,
         verify_build: bool = False,
+        default_source_language: str = "english",
     ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         artifacts_root = Path(artifact_dir) if artifact_dir else None
@@ -212,6 +307,7 @@ class EnglishToCodeTranslator:
             mode = str(item.get("mode", default_mode)).strip()
             context = item.get("context")
             refine = bool(item.get("refine", False))
+            source_language = str(item.get("source_language", default_source_language)).strip().lower()
 
             try:
                 output = self.translate(
@@ -221,12 +317,14 @@ class EnglishToCodeTranslator:
                     context=context,
                     refine=refine,
                     strict_safety=strict_safety,
+                    source_language=source_language,
                 )
                 payload: dict[str, Any] = {
                     "index": idx,
                     "ok": True,
                     "target": target,
                     "mode": mode,
+                    "source_language": source_language,
                     "resolved_provider": self._last_resolved_provider,
                     "output": output,
                 }
@@ -237,7 +335,12 @@ class EnglishToCodeTranslator:
                     payload["verify_output_message"] = verify_message
 
                 if include_explain:
-                    payload["explain"] = self.explain_plan(prompt, target=target, mode=mode)
+                    payload["explain"] = self.explain_plan(
+                        prompt,
+                        target=target,
+                        mode=mode,
+                        source_language=source_language,
+                    )
 
                 scaffold_root: Path | None = None
                 if artifacts_root:
@@ -274,6 +377,7 @@ class EnglishToCodeTranslator:
                         "ok": False,
                         "target": target,
                         "mode": mode,
+                        "source_language": source_language,
                         "resolved_provider": self._last_resolved_provider,
                         "error": str(exc),
                     }
@@ -292,11 +396,14 @@ class EnglishToCodeTranslator:
 
         target_counts: dict[str, int] = {}
         provider_counts: dict[str, int] = {}
+        source_language_counts: dict[str, int] = {}
         for item in batch_results:
             target = str(item.get("target", "unknown"))
             provider = str(item.get("resolved_provider", "unknown"))
+            source_language = str(item.get("source_language", "unknown"))
             target_counts[target] = target_counts.get(target, 0) + 1
             provider_counts[provider] = provider_counts.get(provider, 0) + 1
+            source_language_counts[source_language] = source_language_counts.get(source_language, 0) + 1
 
         total = len(batch_results)
         success_rate = (ok_count / total) if total else 0.0
@@ -314,6 +421,7 @@ class EnglishToCodeTranslator:
             "verify_build_rate": round(verify_build_rate, 4),
             "target_counts": target_counts,
             "resolved_provider_counts": provider_counts,
+            "source_language_counts": source_language_counts,
             "results": batch_results,
         }
         destination.write_text(json.dumps(summary, indent=2), encoding="utf-8")

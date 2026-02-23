@@ -258,3 +258,38 @@ def test_batch_report_contains_verify_metrics(tmp_path) -> None:
     assert payload["verify_build_ok"] == 1
     assert payload["verify_output_rate"] == 0.5
     assert payload["verify_build_rate"] == 0.5
+
+
+def test_multilingual_spanish_prompt_translation() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    out = translator.translate(
+        prompt="Cuando jugador saltar",
+        target="python",
+        source_language="spanish",
+    )
+    assert "player" in out.lower()
+    assert "jump" in out.lower()
+
+
+def test_explain_plan_includes_normalized_prompt() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    explanation = translator.explain_plan(
+        prompt="Quand joueur sauter",
+        target="python",
+        source_language="french",
+    )
+    assert explanation["source_language"] == "french"
+    assert "player" in explanation["normalized_prompt"].lower()
+
+
+def test_batch_report_contains_source_language_counts(tmp_path) -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    batch = [
+        {"prompt": "Cuando jugador saltar", "target": "python", "source_language": "spanish"},
+        {"prompt": "Spawn enemy when timer reaches zero", "target": "cpp", "source_language": "english"},
+    ]
+    results = translator.translate_batch(batch, default_target="python")
+    report = translator.write_batch_report(results, str(tmp_path / "lang_batch.json"))
+    payload = json.loads(Path(report).read_text(encoding="utf-8"))
+    assert payload["source_language_counts"]["spanish"] == 1
+    assert payload["source_language_counts"]["english"] == 1
