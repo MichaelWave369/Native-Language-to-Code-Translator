@@ -22,10 +22,29 @@ from translator.targets.registry import build_registry
 
 class EnglishToCodeTranslator:
     MODES = {"gameplay", "automation", "video-processing", "web-backend"}
+    PLANNER_PROVIDERS = {"auto", "heuristic", "openai"}
+    BLOCKED_PATTERNS = [
+        "rm -rf /",
+        "shutdown",
+        "format c:",
+        "drop database",
+        "os.system(\"rm",
+        "subprocess.run(['rm",
+    ]
 
-    def __init__(self, planner: Optional[object] = None) -> None:
+    def __init__(
+        self,
+        planner: Optional[object] = None,
+        planner_provider: str = "auto",
+    ) -> None:
+        if planner_provider not in self.PLANNER_PROVIDERS:
+            raise ValueError(
+                f"Unsupported planner_provider '{planner_provider}'. "
+                f"Supported: {', '.join(sorted(self.PLANNER_PROVIDERS))}"
+            )
         self._heuristic = HeuristicPlanner()
         self.planner = planner
+        self.planner_provider = planner_provider
         self.renderers = build_registry()
 
     @property
@@ -35,7 +54,15 @@ class EnglishToCodeTranslator:
     def _get_planner(self) -> object:
         if self.planner is not None:
             return self.planner
-        return OpenAISemanticPlanner()
+        if self.planner_provider == "heuristic":
+            return self._heuristic
+        if self.planner_provider == "openai":
+            return OpenAISemanticPlanner()
+
+        try:
+            return OpenAISemanticPlanner()
+        except Exception:
+            return self._heuristic
 
     def _canonicalize_intent(self, intent: ParsedIntent) -> ParsedIntent:
         schema = IntentSchema(
@@ -50,6 +77,14 @@ class EnglishToCodeTranslator:
             conditions=[str(x) for x in schema.conditions] or ["always"],
             outputs=[str(x) for x in schema.outputs] or ["state"],
         )
+
+    def _enforce_safety(self, text: str, strict_safety: bool = False) -> None:
+        if not strict_safety:
+            return
+        lowered = text.lower()
+        for pattern in self.BLOCKED_PATTERNS:
+            if pattern in lowered:
+                raise ValueError(f"Safety policy blocked content containing pattern: {pattern}")
 
     def plan_intent(self, prompt: str, mode: str = "gameplay") -> ParsedIntent:
         try:
@@ -87,11 +122,11 @@ class EnglishToCodeTranslator:
         return GenerationPlan(intent=intent, ir=ir, steps=steps, state_model=state_model)
 
     def explain_plan(self, prompt: str, target: str, mode: str = "gameplay") -> dict[str, Any]:
-        """Return a structured explanation payload for generation debugging."""
         plan = self.build_generation_plan(prompt, mode=mode)
         return {
             "target": target,
             "mode": mode,
+            "planner_provider": self.planner_provider,
             "intent": {
                 "entities": plan.intent.entities,
                 "actions": plan.intent.actions,
@@ -115,6 +150,7 @@ class EnglishToCodeTranslator:
         mode: str = "gameplay",
         context: Optional[str] = None,
         refine: bool = False,
+        strict_safety: bool = False,
     ) -> str:
         if mode not in self.MODES:
             raise ValueError(f"Unsupported mode '{mode}'. Supported: {', '.join(sorted(self.MODES))}")
@@ -128,9 +164,12 @@ class EnglishToCodeTranslator:
         if refine and context:
             combined_prompt = f"{prompt}\n\nPrevious output context:\n{context}"
 
+        self._enforce_safety(combined_prompt, strict_safety=strict_safety)
         plan = self.build_generation_plan(combined_prompt, mode=mode)
         renderer = self.renderers[normalized_target]
-        return renderer.render(combined_prompt, plan.intent, mode=mode, plan=plan)
+        output = renderer.render(combined_prompt, plan.intent, mode=mode, plan=plan)
+        self._enforce_safety(output, strict_safety=strict_safety)
+        return output
 
     def scaffold_project(self, prompt: str, target: str, output_dir: str, mode: str = "gameplay") -> str:
         root = Path(output_dir)
@@ -232,6 +271,46 @@ class EnglishToCodeTranslator:
             return ok, "gdscript scaffold files present" if ok else "missing Godot scaffold files"
 
         return True, "no scaffold verification for target"
+
+    def verify_scaffold_build(self, scaffold_dir: str, target: str) -> tuple[bool, str]:
+        root = Path(scaffold_dir)
+        if not root.exists():
+            return False, "scaffold directory does not exist"
+
+        if target == "python":
+            if not shutil.which("pytest"):
+                return False, "pytest unavailable"
+            proc = subprocess.run(["pytest", "-q"], cwd=root, capture_output=True, text=True)
+            return proc.returncode == 0, (proc.stdout.strip() or proc.stderr.strip() or "pytest finished")
+
+        if target == "javascript":
+            if not shutil.which("node"):
+                return False, "node unavailable"
+            src = root / "src" / "generatedFeature.js"
+            if not src.exists():
+                return False, "missing src/generatedFeature.js"
+            proc = subprocess.run(["node", "--check", str(src)], cwd=root, capture_output=True, text=True)
+            return proc.returncode == 0, (proc.stdout.strip() or proc.stderr.strip() or "node check ok")
+
+        if target == "cpp":
+            if not shutil.which("clang++"):
+                return False, "clang++ unavailable"
+            src = root / "main.cpp"
+            if not src.exists():
+                return False, "missing main.cpp"
+            proc = subprocess.run(["clang++", "-fsyntax-only", str(src)], cwd=root, capture_output=True, text=True)
+            return proc.returncode == 0, (proc.stdout.strip() or proc.stderr.strip() or "clang++ syntax ok")
+
+        if target == "csharp":
+            if not shutil.which("dotnet"):
+                return False, "dotnet unavailable"
+            proc = subprocess.run(["dotnet", "build", "-nologo"], cwd=root, capture_output=True, text=True)
+            return proc.returncode == 0, (proc.stdout.strip() or proc.stderr.strip() or "dotnet build ok")
+
+        if target == "gdscript":
+            return False, "gdscript build verification not implemented"
+
+        return False, "no scaffold build verification for target"
 
     def export_unreal_uasset_payload(
         self,

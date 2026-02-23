@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from translator.core import EnglishToCodeTranslator
 from translator.models import ParsedIntent
 from translator.planners.heuristic import HeuristicPlanner
@@ -30,6 +32,7 @@ def test_explain_plan_returns_ir_and_steps() -> None:
         mode="gameplay",
     )
     assert explanation["target"] == "cpp"
+    assert explanation["planner_provider"] == "auto"
     assert "intent" in explanation
     assert "ir" in explanation
     assert len(explanation["steps"]) >= 3
@@ -84,6 +87,17 @@ def test_scaffold_project_and_verify_python(tmp_path) -> None:
     assert ok
 
 
+def test_verify_scaffold_build_python(tmp_path) -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    root = translator.scaffold_project(
+        prompt="Create a player that jumps",
+        target="python",
+        output_dir=str(tmp_path / "pyproj"),
+    )
+    ok, message = translator.verify_scaffold_build(root, "python")
+    assert ok, message
+
+
 def test_refine_with_context_changes_prompt_usage() -> None:
     translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
     out = translator.translate(
@@ -108,3 +122,15 @@ def test_deterministic_translation_for_eval_signal() -> None:
     a = translator.translate("Create a player jump on space and play sound", "python")
     b = translator.translate("Create a player jump on space and play sound", "python")
     assert a == b
+
+
+def test_planner_provider_heuristic_is_selectable() -> None:
+    translator = EnglishToCodeTranslator(planner_provider="heuristic")
+    out = translator.translate("Create a player that can jump", "python")
+    assert "GeneratedFeature" in out
+
+
+def test_strict_safety_blocks_unsafe_prompt() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    with pytest.raises(ValueError):
+        translator.translate("Please run rm -rf / immediately", "python", strict_safety=True)

@@ -16,14 +16,27 @@ def build_parser() -> argparse.ArgumentParser:
         default="gameplay",
         choices=["gameplay", "automation", "video-processing", "web-backend"],
     )
+    parser.add_argument(
+        "--planner-provider",
+        default="auto",
+        choices=["auto", "heuristic", "openai"],
+        help="Select planner backend provider",
+    )
+    parser.add_argument("--strict-safety", action="store_true", help="Block unsafe content patterns")
     parser.add_argument("--context-file", help="Optional previous output context for iterative refinement")
     parser.add_argument("--refine", action="store_true", help="Enable context-aware iterative refinement")
     parser.add_argument("--verify", action="store_true", help="Run target-specific syntax checks")
     parser.add_argument("--scaffold-dir", help="Generate a starter project scaffold in this folder")
     parser.add_argument("--verify-scaffold", action="store_true", help="Verify scaffold file/build structure")
+    parser.add_argument(
+        "--verify-scaffold-build",
+        action="store_true",
+        help="Run tool-based build checks on scaffold outputs when supported",
+    )
     parser.add_argument("--export-uasset-json", help="Optional path to export Unreal Blueprint graph contract JSON")
     parser.add_argument("--blueprint-name", default="BP_GeneratedFeature")
     parser.add_argument("--explain-plan", action="store_true", help="Print planner/IR explanation as JSON")
+    parser.add_argument("--explain-plan-file", help="Optional file path to write explain-plan JSON")
     return parser
 
 
@@ -31,7 +44,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    translator = EnglishToCodeTranslator()
+    translator = EnglishToCodeTranslator(planner_provider=args.planner_provider)
     context = None
     if args.context_file:
         context = Path(args.context_file).read_text(encoding="utf-8")
@@ -42,13 +55,20 @@ def main() -> None:
         mode=args.mode,
         context=context,
         refine=args.refine,
+        strict_safety=args.strict_safety,
     )
     print(output)
 
-    if args.explain_plan:
+    if args.explain_plan or args.explain_plan_file:
         explanation = translator.explain_plan(args.prompt, target=args.target, mode=args.mode)
-        print("\n[plan]")
-        print(json.dumps(explanation, indent=2))
+        if args.explain_plan:
+            print("\n[plan]")
+            print(json.dumps(explanation, indent=2))
+        if args.explain_plan_file:
+            destination = Path(args.explain_plan_file)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(explanation, indent=2), encoding="utf-8")
+            print(f"\n[plan-file] written: {destination}")
 
     if args.verify:
         ok, message = translator.verify_output(output, args.target)
@@ -69,6 +89,16 @@ def main() -> None:
             ok, message = translator.verify_scaffold(scaffold_root, args.target)
             status = "ok" if ok else "warn"
             print(f"\n[verify-scaffold:{status}] {message}")
+
+    if args.verify_scaffold_build:
+        if scaffold_root is None and args.scaffold_dir:
+            scaffold_root = args.scaffold_dir
+        if scaffold_root is None:
+            print("\n[verify-scaffold-build:warn] --verify-scaffold-build used without --scaffold-dir")
+        else:
+            ok, message = translator.verify_scaffold_build(scaffold_root, args.target)
+            status = "ok" if ok else "warn"
+            print(f"\n[verify-scaffold-build:{status}] {message}")
 
     if args.export_uasset_json:
         export_path = translator.export_unreal_uasset_payload(
