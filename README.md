@@ -2,7 +2,7 @@
 
 Translate natural-language ideas into starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
 
-## Next phase (v14) implemented
+## Next phase (v15) implemented
 
 ### 1) Full optimization pass
 - Added fast plan reuse with an internal plan cache (`_plan_cache`) to avoid repeated planning work for identical prompt/mode combinations.
@@ -27,6 +27,16 @@ Translate natural-language ideas into starter code for Python, Blueprint, C++, C
   - `--asset-budget <n>`
   - `--export-engine-manifest <path>`
 - When engine/library args are provided, CLI prints selected assets and can emit engine manifest JSON.
+
+
+### 5) Built-in AI assistant guidance
+- Added assistant guidance API to help users operate the system effectively:
+  - `assistant_guide(...)` returns prompt diagnostics, intent preview, optimization tips, quality tips, and a suggested CLI command.
+  - `warm_plan_cache(...)` preloads generation plans to reduce first-hit latency for known prompt sets.
+- New CLI options:
+  - `--assistant-guide`
+  - `--assistant-report <batch_report.json>`
+  - `--warm-cache-file <prompts.txt>`
 
 ## Asset library format
 

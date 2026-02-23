@@ -497,6 +497,83 @@ class EnglishToCodeTranslator:
         destination.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         return str(destination)
 
+    def warm_plan_cache(self, prompts: list[str], mode: str = "gameplay", source_language: str = "english") -> dict[str, Any]:
+        warmed = 0
+        for prompt in prompts:
+            normalized = self._normalize_prompt_language(prompt, source_language=source_language)
+            key = (normalized, mode)
+            if key in self._plan_cache:
+                continue
+            self.build_generation_plan(normalized, mode=mode)
+            warmed += 1
+        return {
+            "mode": mode,
+            "source_language": source_language,
+            "warmed": warmed,
+            "cache_size": len(self._plan_cache),
+        }
+
+    def assistant_guide(
+        self,
+        prompt: str,
+        target: str,
+        mode: str = "gameplay",
+        source_language: str = "english",
+        batch_report: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        normalized_prompt = self._normalize_prompt_language(prompt, source_language=source_language)
+        plan = self.build_generation_plan(normalized_prompt, mode=mode)
+        suggestions: list[str] = []
+
+        if target.lower().strip() == "blueprint":
+            suggestions.append("For Unreal Blueprint output, export graph payload with --export-uasset-json for editor-side import.")
+        if target.lower().strip() == "csharp":
+            suggestions.append("For Unity workflows, combine --engine unity with --asset-library to bind prompts to available prefabs/assets.")
+        if source_language != "english":
+            suggestions.append("Prompt is normalized from non-English input; add domain terms to token maps for better intent fidelity.")
+        if len(plan.intent.actions) <= 1:
+            suggestions.append("Add more action verbs in the prompt for richer generated behavior.")
+        if "when" not in normalized_prompt.lower() and "if" not in normalized_prompt.lower():
+            suggestions.append("Include explicit conditions (e.g., when/if) to improve event trigger structure.")
+
+        perf_tip = "Enable --swarm-workers for batch speed and --enable-rag-cache for repeated related prompts."
+        suggestions.append(perf_tip)
+
+        quality_tip = "Use --verify, --verify-scaffold, and batch min-rate gates to enforce quality in CI."
+        suggestions.append(quality_tip)
+
+        report_summary = None
+        if batch_report:
+            report_summary = {
+                "success_rate": batch_report.get("success_rate", 0.0),
+                "avg_elapsed_ms": batch_report.get("avg_elapsed_ms", 0.0),
+            }
+            if float(batch_report.get("success_rate", 0.0)) < 1.0:
+                suggestions.append("Batch report indicates failures; inspect per-item errors and consider --batch-fail-fast during debugging.")
+
+        safe_prompt = prompt.replace("'", "\\'")
+        suggested_command = (
+            f"python -m translator.cli --target {target} --mode {mode} "
+            f"--prompt '{safe_prompt}' --verify --enable-rag-cache"
+        )
+
+        return {
+            "prompt": prompt,
+            "normalized_prompt": normalized_prompt,
+            "target": target,
+            "mode": mode,
+            "source_language": source_language,
+            "intent_preview": {
+                "entities": plan.intent.entities,
+                "actions": plan.intent.actions,
+                "conditions": plan.intent.conditions,
+                "outputs": plan.intent.outputs,
+            },
+            "suggestions": suggestions,
+            "report_summary": report_summary,
+            "suggested_command": suggested_command,
+        }
+
     def translate(
         self,
         prompt: str,

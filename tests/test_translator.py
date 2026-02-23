@@ -389,3 +389,22 @@ def test_plan_cache_populated() -> None:
     translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
     translator.build_generation_plan("Create jump", mode="gameplay")
     assert ("Create jump", "gameplay") in translator._plan_cache
+
+
+def test_assistant_guide_contains_suggestions() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    guide = translator.assistant_guide(
+        prompt="Create player jump",
+        target="python",
+        mode="gameplay",
+    )
+    assert guide["target"] == "python"
+    assert guide["suggestions"]
+    assert "suggested_command" in guide
+
+
+def test_warm_plan_cache_counts_entries() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    result = translator.warm_plan_cache(["Create jump", "Create jump", "Spawn enemy"], mode="gameplay")
+    assert result["cache_size"] >= 2
+    assert result["warmed"] >= 2

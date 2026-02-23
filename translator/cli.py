@@ -44,6 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--asset-library", help="Path to user asset library JSON for engine-aware generation")
     parser.add_argument("--asset-budget", type=int, default=5, help="Max assets to select from library")
     parser.add_argument("--export-engine-manifest", help="Optional output path for Unreal/Unity asset manifest JSON")
+    parser.add_argument("--assistant-guide", action="store_true", help="Print AI assistant guidance for prompt/system usage")
+    parser.add_argument("--assistant-report", help="Optional batch report JSON path used by assistant guidance")
+    parser.add_argument("--warm-cache-file", help="Optional text file with one prompt per line to pre-warm plan cache")
     parser.add_argument(
         "--audio-output-language",
         default="english",
@@ -102,6 +105,11 @@ def main() -> None:
     args = parser.parse_args()
 
     translator = EnglishToCodeTranslator(planner_provider=args.planner_provider)
+
+    if args.warm_cache_file:
+        prompts = [line.strip() for line in Path(args.warm_cache_file).read_text(encoding="utf-8").splitlines() if line.strip()]
+        warm = translator.warm_plan_cache(prompts, mode=args.mode, source_language=args.source_language)
+        print(f"[warm-cache] {json.dumps(warm)}")
 
     if args.sandbox_command:
         ok, message = translator.run_in_vm_sandbox(args.sandbox_command)
@@ -205,6 +213,20 @@ def main() -> None:
     if asset_result is not None:
         print("\n[asset-selection]")
         print(json.dumps(asset_result["selected_assets"], indent=2))
+
+    if args.assistant_guide:
+        report_payload = None
+        if args.assistant_report:
+            report_payload = json.loads(Path(args.assistant_report).read_text(encoding="utf-8"))
+        guide = translator.assistant_guide(
+            prompt=prompt,
+            target=args.target,
+            mode=args.mode,
+            source_language=args.source_language,
+            batch_report=report_payload,
+        )
+        print("\n[assistant-guide]")
+        print(json.dumps(guide, indent=2))
 
     if args.audio_output:
         audio_path = translator.synthesize_audio_output(
