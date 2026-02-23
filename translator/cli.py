@@ -38,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--audio-input", help="Audio input path (or .txt transcript file)")
     parser.add_argument("--audio-output", help="Audio output path (best effort TTS; .txt fallback if unavailable)")
+    parser.add_argument("--enable-rag-cache", action="store_true", help="Enable 12x12x12x12 lattice RAG cache during translation")
+    parser.add_argument("--sandbox-command", nargs="+", help="Run a command in isolated VM-like temp sandbox")
     parser.add_argument(
         "--audio-output-language",
         default="english",
@@ -68,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-input", help="Path to JSON/JSONL batch prompts")
     parser.add_argument("--batch-report", help="Path to write batch run report JSON")
     parser.add_argument("--batch-fail-fast", action="store_true", help="Stop batch processing on first failed item")
+    parser.add_argument("--swarm-workers", type=int, default=1, help="Parallel workers for batch translation swarm mode")
     parser.add_argument(
         "--batch-min-success-rate",
         type=float,
@@ -96,6 +99,11 @@ def main() -> None:
 
     translator = EnglishToCodeTranslator(planner_provider=args.planner_provider)
 
+    if args.sandbox_command:
+        ok, message = translator.run_in_vm_sandbox(args.sandbox_command)
+        status = "ok" if ok else "warn"
+        print(f"[sandbox:{status}] {message}")
+
     if args.batch_input:
         items = _load_batch_items(args.batch_input)
         results = translator.translate_batch(
@@ -109,6 +117,7 @@ def main() -> None:
             verify_generated=args.batch_verify_output,
             verify_build=args.batch_verify_build,
             default_source_language=args.source_language,
+            swarm_workers=max(1, args.swarm_workers),
         )
         print(json.dumps(results, indent=2))
         if args.batch_report:
@@ -172,6 +181,7 @@ def main() -> None:
         refine=args.refine,
         strict_safety=args.strict_safety,
         source_language=args.source_language,
+        use_rag_cache=args.enable_rag_cache,
     )
     print(output)
 

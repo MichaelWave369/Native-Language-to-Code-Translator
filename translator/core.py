@@ -4,6 +4,8 @@ import json
 import re
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from hashlib import sha256
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -122,6 +124,8 @@ class EnglishToCodeTranslator:
         self.planner_provider = planner_provider
         self._last_resolved_provider = "custom" if planner is not None else planner_provider
         self.renderers = build_registry()
+        self._rag_lattice: dict[tuple[int, int, int, int], list[dict[str, str]]] = {}
+        self.lattice_shape = (12, 12, 12, 12)
 
     @property
     def supported_targets(self) -> set[str]:
@@ -315,6 +319,44 @@ class EnglishToCodeTranslator:
             "state_model": plan.state_model,
         }
 
+    def _lattice_bucket(self, prompt: str, target: str, mode: str, source_language: str) -> tuple[int, int, int, int]:
+        digest = sha256(f"{prompt}|{target}|{mode}|{source_language}".encode("utf-8")).digest()
+        return tuple(digest[i] % 12 for i in range(4))
+
+    def _rag_store(self, prompt: str, output: str, target: str, mode: str, source_language: str) -> tuple[int, int, int, int]:
+        bucket = self._lattice_bucket(prompt, target, mode, source_language)
+        entries = self._rag_lattice.setdefault(bucket, [])
+        entries.append({"prompt": prompt, "output": output, "target": target, "mode": mode, "source_language": source_language})
+        if len(entries) > 64:
+            del entries[:-64]
+        return bucket
+
+    def rag_retrieve(self, prompt: str, target: str, mode: str = "gameplay", source_language: str = "english", limit: int = 3) -> list[dict[str, str]]:
+        bucket = self._lattice_bucket(prompt, target, mode, source_language)
+        return list(self._rag_lattice.get(bucket, [])[-limit:])
+
+    def run_in_vm_sandbox(self, command: list[str], timeout_s: int = 20) -> tuple[bool, str]:
+        if not command:
+            return False, "No command provided"
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="nevora-vm-sandbox-") as td:
+            try:
+                result = subprocess.run(
+                    command,
+                    cwd=td,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_s,
+                )
+                output = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+                if result.returncode == 0:
+                    return True, output.strip() or "sandbox execution succeeded"
+                return False, output.strip() or f"sandbox command failed with code {result.returncode}"
+            except subprocess.TimeoutExpired:
+                return False, f"sandbox command timed out after {timeout_s}s"
+
     def translate(
         self,
         prompt: str,
@@ -324,6 +366,7 @@ class EnglishToCodeTranslator:
         refine: bool = False,
         strict_safety: bool = False,
         source_language: str = "english",
+        use_rag_cache: bool = False,
     ) -> str:
         if mode not in self.MODES:
             raise ValueError(f"Unsupported mode '{mode}'. Supported: {', '.join(sorted(self.MODES))}")
@@ -343,15 +386,100 @@ class EnglishToCodeTranslator:
             combined_prompt = f"{normalized_prompt}\n\nPrevious output context:\n{normalized_context}"
 
         self._enforce_safety(combined_prompt, strict_safety=strict_safety)
-        plan = self.build_generation_plan(combined_prompt, mode=mode)
+        rag_context = ""
+        if use_rag_cache:
+            neighbors = self.rag_retrieve(combined_prompt, normalized_target, mode=mode, source_language=source_language, limit=2)
+            if neighbors:
+                rag_context = "\n\nRAG memory hints:\n" + "\n".join(n["output"][:240] for n in neighbors)
+        plan = self.build_generation_plan(combined_prompt + rag_context, mode=mode)
         renderer = self.renderers[normalized_target]
         output = renderer.render(combined_prompt, plan.intent, mode=mode, plan=plan)
         self._enforce_safety(output, strict_safety=strict_safety)
+        if use_rag_cache:
+            self._rag_store(combined_prompt, output, normalized_target, mode, source_language)
         return output
 
     def _slug(self, text: str) -> str:
         cleaned = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
         return cleaned[:48] or "item"
+
+    def _translate_batch_item(
+        self,
+        idx: int,
+        item: dict[str, Any],
+        default_target: str,
+        default_mode: str,
+        strict_safety: bool,
+        verify_generated: bool,
+        verify_build: bool,
+        default_source_language: str,
+        include_explain: bool,
+        artifacts_root: Path | None,
+    ) -> dict[str, Any]:
+        prompt = str(item.get("prompt", "")).strip()
+        target = str(item.get("target", default_target)).strip()
+        mode = str(item.get("mode", default_mode)).strip()
+        context = item.get("context")
+        refine = bool(item.get("refine", False))
+        source_language = str(item.get("source_language", default_source_language)).strip().lower()
+
+        output = self.translate(
+            prompt=prompt,
+            target=target,
+            mode=mode,
+            context=context,
+            refine=refine,
+            strict_safety=strict_safety,
+            source_language=source_language,
+            use_rag_cache=True,
+        )
+        payload: dict[str, Any] = {
+            "index": idx,
+            "ok": True,
+            "target": target,
+            "mode": mode,
+            "source_language": source_language,
+            "resolved_provider": self._last_resolved_provider,
+            "output": output,
+            "lattice_bucket": list(self._lattice_bucket(prompt, target, mode, source_language)),
+        }
+
+        if verify_generated:
+            verify_ok, verify_message = self.verify_output(output, target)
+            payload["verify_output_ok"] = verify_ok
+            payload["verify_output_message"] = verify_message
+
+        if include_explain:
+            payload["explain"] = self.explain_plan(prompt, target=target, mode=mode, source_language=source_language)
+
+        scaffold_root: Path | None = None
+        if artifacts_root:
+            item_dir = artifacts_root / f"{idx:03d}_{self._slug(prompt)}"
+            item_dir.mkdir(parents=True, exist_ok=True)
+            output_file = item_dir / f"output.{target}.txt"
+            output_file.write_text(output, encoding="utf-8")
+            payload["artifact_output_file"] = str(output_file)
+            scaffold_root = item_dir / "scaffold"
+
+            if include_explain:
+                explain_file = item_dir / "plan.json"
+                explain_file.write_text(json.dumps(payload["explain"], indent=2), encoding="utf-8")
+                payload["artifact_plan_file"] = str(explain_file)
+
+        if verify_build:
+            if scaffold_root is None:
+                import tempfile
+
+                with tempfile.TemporaryDirectory(prefix="nevora-batch-scaffold-") as td:
+                    self.scaffold_project(prompt, target=target, output_dir=td, mode=mode)
+                    build_ok, build_message = self.verify_scaffold_build(td, target)
+            else:
+                self.scaffold_project(prompt, target=target, output_dir=str(scaffold_root), mode=mode)
+                build_ok, build_message = self.verify_scaffold_build(str(scaffold_root), target)
+            payload["verify_build_ok"] = build_ok
+            payload["verify_build_message"] = build_message
+
+        return payload
 
     def translate_batch(
         self,
@@ -365,95 +493,58 @@ class EnglishToCodeTranslator:
         verify_generated: bool = False,
         verify_build: bool = False,
         default_source_language: str = "english",
+        swarm_workers: int = 1,
     ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         artifacts_root = Path(artifact_dir) if artifact_dir else None
         if artifacts_root:
             artifacts_root.mkdir(parents=True, exist_ok=True)
 
-        for idx, item in enumerate(items):
-            prompt = str(item.get("prompt", "")).strip()
-            target = str(item.get("target", default_target)).strip()
-            mode = str(item.get("mode", default_mode)).strip()
-            context = item.get("context")
-            refine = bool(item.get("refine", False))
-            source_language = str(item.get("source_language", default_source_language)).strip().lower()
-
+        def _safe_item(idx: int, item: dict[str, Any]) -> dict[str, Any]:
             try:
-                output = self.translate(
-                    prompt=prompt,
-                    target=target,
-                    mode=mode,
-                    context=context,
-                    refine=refine,
-                    strict_safety=strict_safety,
-                    source_language=source_language,
+                return self._translate_batch_item(
+                    idx,
+                    item,
+                    default_target,
+                    default_mode,
+                    strict_safety,
+                    verify_generated,
+                    verify_build,
+                    default_source_language,
+                    include_explain,
+                    artifacts_root,
                 )
-                payload: dict[str, Any] = {
+            except Exception as exc:
+                target = str(item.get("target", default_target)).strip()
+                mode = str(item.get("mode", default_mode)).strip()
+                source_language = str(item.get("source_language", default_source_language)).strip().lower()
+                return {
                     "index": idx,
-                    "ok": True,
+                    "ok": False,
                     "target": target,
                     "mode": mode,
                     "source_language": source_language,
                     "resolved_provider": self._last_resolved_provider,
-                    "output": output,
+                    "error": str(exc),
                 }
 
-                if verify_generated:
-                    verify_ok, verify_message = self.verify_output(output, target)
-                    payload["verify_output_ok"] = verify_ok
-                    payload["verify_output_message"] = verify_message
-
-                if include_explain:
-                    payload["explain"] = self.explain_plan(
-                        prompt,
-                        target=target,
-                        mode=mode,
-                        source_language=source_language,
-                    )
-
-                scaffold_root: Path | None = None
-                if artifacts_root:
-                    item_dir = artifacts_root / f"{idx:03d}_{self._slug(prompt)}"
-                    item_dir.mkdir(parents=True, exist_ok=True)
-                    output_file = item_dir / f"output.{target}.txt"
-                    output_file.write_text(output, encoding="utf-8")
-                    payload["artifact_output_file"] = str(output_file)
-                    scaffold_root = item_dir / "scaffold"
-
-                    if include_explain:
-                        explain_file = item_dir / "plan.json"
-                        explain_file.write_text(json.dumps(payload["explain"], indent=2), encoding="utf-8")
-                        payload["artifact_plan_file"] = str(explain_file)
-
-                if verify_build:
-                    if scaffold_root is None:
-                        import tempfile
-
-                        with tempfile.TemporaryDirectory(prefix="nevora-batch-scaffold-") as td:
-                            self.scaffold_project(prompt, target=target, output_dir=td, mode=mode)
-                            build_ok, build_message = self.verify_scaffold_build(td, target)
-                    else:
-                        self.scaffold_project(prompt, target=target, output_dir=str(scaffold_root), mode=mode)
-                        build_ok, build_message = self.verify_scaffold_build(str(scaffold_root), target)
-                    payload["verify_build_ok"] = build_ok
-                    payload["verify_build_message"] = build_message
-
+        if swarm_workers <= 1 or fail_fast:
+            for idx, item in enumerate(items):
+                payload = _safe_item(idx, item)
                 results.append(payload)
-            except Exception as exc:
-                results.append(
-                    {
-                        "index": idx,
-                        "ok": False,
-                        "target": target,
-                        "mode": mode,
-                        "source_language": source_language,
-                        "resolved_provider": self._last_resolved_provider,
-                        "error": str(exc),
-                    }
-                )
-                if fail_fast:
+                if fail_fast and not payload.get("ok"):
                     break
+            return results
+
+        with ThreadPoolExecutor(max_workers=swarm_workers) as executor:
+            futures = {executor.submit(_safe_item, idx, item): idx for idx, item in enumerate(items)}
+            ordered: dict[int, dict[str, Any]] = {}
+            for future in as_completed(futures):
+                payload = future.result()
+                ordered[payload["index"]] = payload
+            for idx in range(len(items)):
+                if idx in ordered:
+                    results.append(ordered[idx])
         return results
 
     def write_batch_report(self, batch_results: list[dict[str, Any]], output_file: str) -> str:
@@ -467,6 +558,7 @@ class EnglishToCodeTranslator:
         target_counts: dict[str, int] = {}
         provider_counts: dict[str, int] = {}
         source_language_counts: dict[str, int] = {}
+        lattice_bucket_counts: dict[str, int] = {}
         for item in batch_results:
             target = str(item.get("target", "unknown"))
             provider = str(item.get("resolved_provider", "unknown"))
@@ -474,6 +566,10 @@ class EnglishToCodeTranslator:
             target_counts[target] = target_counts.get(target, 0) + 1
             provider_counts[provider] = provider_counts.get(provider, 0) + 1
             source_language_counts[source_language] = source_language_counts.get(source_language, 0) + 1
+            bucket = item.get("lattice_bucket")
+            if isinstance(bucket, list) and len(bucket) == 4:
+                key = "x".join(str(v) for v in bucket)
+                lattice_bucket_counts[key] = lattice_bucket_counts.get(key, 0) + 1
 
         total = len(batch_results)
         success_rate = (ok_count / total) if total else 0.0
@@ -492,6 +588,8 @@ class EnglishToCodeTranslator:
             "target_counts": target_counts,
             "resolved_provider_counts": provider_counts,
             "source_language_counts": source_language_counts,
+            "lattice_shape": list(self.lattice_shape),
+            "lattice_bucket_counts": lattice_bucket_counts,
             "results": batch_results,
         }
         destination.write_text(json.dumps(summary, indent=2), encoding="utf-8")

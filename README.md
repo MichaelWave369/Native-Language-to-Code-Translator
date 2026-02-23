@@ -2,35 +2,25 @@
 
 Translate natural-language ideas into starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
 
-## Next phase (v12) implemented
+## Next phase (v13) implemented
 
-### 1) Multilingual text prompts
-- Source prompt languages supported:
-  - `english`
-  - `spanish`
-  - `french`
-  - `german`
-  - `portuguese`
-- Non-English prompts are token-normalized into English before planning/rendering so all existing targets continue to work.
+### 1) Speed optimization with lattice RAG cache
+- Added a lightweight in-memory retrieval cache keyed by a **12x12x12x12 lattice** bucket.
+- Each translation can store/retrieve nearby prior generations to reuse context and reduce repeated planning overhead on similar prompts.
+- Batch reports now include `lattice_shape` and `lattice_bucket_counts` for observability.
 
-### 2) Audio input support (multilingual)
-- New single-run CLI flag: `--audio-input`.
-- You can pass:
-  - a transcript-like file (`.txt`, `.md`, `.prompt`) for deterministic local workflows, or
-  - an audio file when optional speech dependencies are installed.
-- Language control: `--source-language` is used for transcription language handling.
+### 2) AI swarm batch execution
+- Batch translation now supports parallel workers for swarm execution via `swarm_workers` (CLI: `--swarm-workers`).
+- Maintains deterministic output ordering by original item index while executing items concurrently.
 
-### 3) Audio output support (multilingual)
-- New single-run CLI flags:
-  - `--audio-output`
-  - `--audio-output-language`
-- Translator attempts TTS output using optional runtime dependency (`pyttsx3`).
-- If TTS is unavailable, it safely falls back to writing a transcript sidecar file (`<audio_output_path>.txt`).
+### 3) VM-like sandbox command execution
+- Added `run_in_vm_sandbox(...)` for isolated command execution in a temporary working directory with timeout protection.
+- CLI support: `--sandbox-command ...` to run quick validation/safety tasks in the sandbox flow.
 
-### 4) Existing batch quality gates retained
-- `--batch-verify-output`, `--batch-verify-build`
-- `--batch-min-success-rate`, `--batch-min-verify-output-rate`, `--batch-min-verify-build-rate`
-- `--batch-fail-fast`
+### 4) Multilingual + audio pipeline retained
+- Multilingual prompt normalization (English/Spanish/French/German/Portuguese).
+- Audio input (`--audio-input`) with transcript-file fallback.
+- Audio output (`--audio-output`) with `.txt` fallback when TTS is unavailable.
 
 ## Quick start
 
@@ -39,58 +29,33 @@ pip install -r requirements.txt
 python -m translator.cli --target python --prompt "Create player jump on space" --mode gameplay --verify
 ```
 
-## Multilingual text example (Spanish)
+## Swarm batch example
 
 ```bash
 python -m translator.cli \
   --target python \
-  --source-language spanish \
-  --prompt "Cuando jugador saltar"
+  --batch-input batch.jsonl \
+  --batch-report artifacts/batch_report.json \
+  --swarm-workers 4
 ```
 
-## Audio input example (transcript file)
+## Sandbox command example
+
+```bash
+python -m translator.cli \
+  --target python \
+  --sandbox-command python3 /tmp/sandbox_cmd.py \
+  --prompt "Create player jump"
+```
+
+## Audio + multilingual example
 
 ```bash
 python -m translator.cli \
   --target python \
   --source-language spanish \
   --audio-input /tmp/nevora_audio_prompt.txt \
-  --explain-plan
-```
-
-## Audio output example
-
-```bash
-python -m translator.cli \
-  --target python \
-  --prompt "Create player jump on space" \
-  --audio-output artifacts/speech.wav \
-  --audio-output-language english
-```
-
-## Optional audio dependencies
-
-```bash
-pip install SpeechRecognition pyttsx3
-```
-
-> Note: audio support is best-effort in constrained environments. If speech dependencies or system TTS engines are unavailable, use transcript input and/or transcript output fallback.
-
-## Batch mode with language mix + quality gates
-
-```bash
-python -m translator.cli \
-  --target python \
-  --source-language english \
-  --batch-input batch.jsonl \
-  --batch-report artifacts/batch_report.json \
-  --batch-artifact-dir artifacts/batch_items \
-  --batch-include-explain \
-  --batch-verify-output \
-  --batch-verify-build \
-  --batch-min-success-rate 0.90 \
-  --batch-min-verify-output-rate 0.90 \
-  --batch-min-verify-build-rate 0.90
+  --audio-output artifacts/speech.wav
 ```
 
 ## Evaluation

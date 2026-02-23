@@ -309,3 +309,30 @@ def test_audio_output_fallback_txt(tmp_path) -> None:
     output_audio = tmp_path / "speech.wav"
     written = translator.synthesize_audio_output("hello world", str(output_audio), output_language="english")
     assert Path(written).exists()
+
+
+def test_rag_lattice_store_and_retrieve() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    translator.translate("Create jump", "python", use_rag_cache=True)
+    neighbors = translator.rag_retrieve("Create jump", "python")
+    assert neighbors
+    assert neighbors[-1]["target"] == "python"
+
+
+def test_translate_batch_swarm_workers() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    batch = [
+        {"prompt": "Create a player that can jump", "target": "python"},
+        {"prompt": "Spawn enemy when timer reaches zero", "target": "cpp"},
+        {"prompt": "When request arrives validate and respond", "target": "javascript"},
+    ]
+    results = translator.translate_batch(batch, default_target="python", swarm_workers=3)
+    assert len(results) == 3
+    assert all("lattice_bucket" in item for item in results)
+
+
+def test_vm_sandbox_execution() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    ok, message = translator.run_in_vm_sandbox(["python3", "-c", "print('ok')"])
+    assert ok
+    assert "ok" in message
