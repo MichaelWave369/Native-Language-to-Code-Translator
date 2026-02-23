@@ -15,14 +15,43 @@ def main() -> None:
 
     total = len(dataset)
     passed = 0
-    for case in dataset:
-        out = translator.translate(case["prompt"], case["target"])
-        ok = all(token in out for token in case["must_contain"])
-        if ok:
-            passed += 1
-        print(f"[{'PASS' if ok else 'FAIL'}] target={case['target']} prompt={case['prompt']}")
+    structure_score = 0
+    intent_score = 0
+    deterministic_score = 0
 
-    print(f"\nScore: {passed}/{total}")
+    for case in dataset:
+        mode = case.get("mode", "gameplay")
+        out_a = translator.translate(case["prompt"], case["target"], mode=mode)
+        out_b = translator.translate(case["prompt"], case["target"], mode=mode)
+
+        structure_ok = all(token in out_a for token in case["must_contain"])
+        if structure_ok:
+            structure_score += 1
+
+        lowered = out_a.lower()
+        token_hits = sum(1 for token in case.get("intent_tokens", []) if token.lower() in lowered)
+        token_total = max(1, len(case.get("intent_tokens", [])))
+        intent_case_score = token_hits / token_total
+        intent_score += intent_case_score
+
+        deterministic_ok = out_a == out_b
+        if deterministic_ok:
+            deterministic_score += 1
+
+        case_ok = structure_ok and intent_case_score >= 0.5 and deterministic_ok
+        if case_ok:
+            passed += 1
+
+        print(
+            f"[{'PASS' if case_ok else 'FAIL'}] target={case['target']} "
+            f"structure={'ok' if structure_ok else 'fail'} "
+            f"intent={intent_case_score:.2f} deterministic={'ok' if deterministic_ok else 'fail'}"
+        )
+
+    print(f"\nPass rate: {passed}/{total}")
+    print(f"Structure score: {structure_score}/{total}")
+    print(f"Intent coverage score: {intent_score:.2f}/{total:.2f}")
+    print(f"Determinism score: {deterministic_score}/{total}")
 
 
 if __name__ == "__main__":

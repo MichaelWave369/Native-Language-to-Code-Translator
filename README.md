@@ -1,38 +1,55 @@
 # Nevora English-to-Code Translator
 
-A small, extensible translator that converts plain-English feature descriptions into starter code for:
+English idea → starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
 
-- **Python**
-- **Unreal Engine Blueprint (pseudo-graph format)**
+## Next phase (v4) implemented
 
-It is designed as an MVP for idea-to-code workflows (games, scripts, and automation concepts).
+### 1) Explainability layer
+- Added `explain_plan(...)` in core to return a structured payload with intent, IR, steps, and state model.
+- Added CLI `--explain-plan` to print JSON plan diagnostics.
+
+### 2) Stronger regression scoring
+- Eval now checks three dimensions per case:
+  - structure checks
+  - intent token coverage
+  - deterministic output consistency
+- Added determinism score summary to evaluation output.
+
+### 3) Prior v3 capabilities retained
+- Canonical schema normalization and IR-first planning.
+- Scaffold creation + scaffold verification via CLI.
+- Unreal graph payload export with IR included.
 
 ## Quick start
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
-python -m translator.cli --target python --prompt "Create a player that can jump when space is pressed"
+python -m translator.cli --target python --prompt "Create player jump on space" --mode gameplay --verify
 ```
 
-### Unreal Blueprint output
+## Explain plan
 
 ```bash
-python -m translator.cli --target blueprint --prompt "When health is zero, play death animation and disable input"
+python -m translator.cli \
+  --target cpp \
+  --prompt "Spawn enemy when timer reaches zero" \
+  --mode gameplay \
+  --explain-plan
 ```
 
-## What this does
+## Scaffold + verify
 
-1. Detects intent from English using lightweight keyword extraction.
-2. Generates deterministic code templates based on detected actions/conditions/entities.
-3. Uses target-specific renderers:
-   - Python renderer outputs runnable Python starter code.
-   - Blueprint renderer outputs node-flow style pseudocode that can be mapped to UE Blueprints.
+```bash
+python -m translator.cli \
+  --target javascript \
+  --prompt "When request arrives validate and respond" \
+  --mode web-backend \
+  --scaffold-dir artifacts/js_app \
+  --verify-scaffold
+```
 
-## Future improvements
+## Evaluation
 
-- LLM-backed semantic planner for deeper interpretation.
-- More targets (C++, C#, JavaScript, GDScript).
-- Direct `.uasset` graph export integration for Unreal.
-- Dataset-driven fine-tuning and benchmarking.
+```bash
+python eval/run_eval.py
+```

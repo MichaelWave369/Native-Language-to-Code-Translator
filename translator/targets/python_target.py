@@ -6,10 +6,10 @@ from translator.models import ParsedIntent
 class PythonRenderer:
     name = "python"
 
-    def render(self, prompt: str, intent: ParsedIntent, mode: str = "gameplay") -> str:
+    def render(self, prompt: str, intent: ParsedIntent, mode: str = "gameplay", plan=None) -> str:
         return f'''"""Auto-generated from English prompt.
 Prompt: {prompt}
-Mode: {mode}
+Mode: {mode}\nIR: {plan.ir.side_effects if plan else []}
 """
 
 class GeneratedFeature:

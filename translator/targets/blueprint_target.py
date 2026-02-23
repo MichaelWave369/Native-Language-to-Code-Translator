@@ -6,7 +6,7 @@ from translator.models import ParsedIntent
 class BlueprintRenderer:
     name = "blueprint"
 
-    def render(self, prompt: str, intent: ParsedIntent, mode: str = "gameplay") -> str:
+    def render(self, prompt: str, intent: ParsedIntent, mode: str = "gameplay", plan=None) -> str:
         return f'''# Unreal Engine Blueprint-style pseudograph
 # Prompt: {prompt}
 # Mode: {mode}
