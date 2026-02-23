@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--planner-provider",
         default="auto",
-        choices=["auto", "heuristic", "openai"],
+        choices=["auto", "heuristic", "openai", "huggingface"],
         help="Select planner backend provider",
     )
     parser.add_argument("--strict-safety", action="store_true", help="Block unsafe content patterns")

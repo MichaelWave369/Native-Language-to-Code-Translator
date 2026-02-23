@@ -475,3 +475,10 @@ def test_generate_assistant_runbook_includes_checklist() -> None:
     assert runbook["title"] == "Nevora Assistant Runbook"
     assert runbook["checklist"]
     assert runbook["commands"]
+
+
+def test_huggingface_provider_falls_back_without_transformers() -> None:
+    translator = EnglishToCodeTranslator(planner_provider="huggingface")
+    output = translator.translate("Create jump", target="python")
+    assert "GeneratedFeature" in output
+    assert translator.last_resolved_provider in {"huggingface", "heuristic-fallback"}

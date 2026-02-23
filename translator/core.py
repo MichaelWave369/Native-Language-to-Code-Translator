@@ -23,12 +23,13 @@ from translator.models import (
 )
 from translator.planners.heuristic import HeuristicPlanner
 from translator.planners.openai_planner import OpenAISemanticPlanner
+from translator.planners.huggingface_planner import HuggingFaceSemanticPlanner
 from translator.targets.registry import build_registry
 
 
 class EnglishToCodeTranslator:
     MODES = {"gameplay", "automation", "video-processing", "web-backend"}
-    PLANNER_PROVIDERS = {"auto", "heuristic", "openai"}
+    PLANNER_PROVIDERS = {"auto", "heuristic", "openai", "huggingface"}
     SOURCE_LANGUAGES = {"english", "spanish", "french", "german", "portuguese"}
     AUDIO_LANGUAGES = SOURCE_LANGUAGES
     ASSET_ENGINES = {"unreal", "unity"}
@@ -149,13 +150,20 @@ class EnglishToCodeTranslator:
         if self.planner_provider == "openai":
             self._last_resolved_provider = "openai"
             return OpenAISemanticPlanner()
+        if self.planner_provider == "huggingface":
+            self._last_resolved_provider = "huggingface"
+            return HuggingFaceSemanticPlanner()
 
         try:
-            self._last_resolved_provider = "openai"
-            return OpenAISemanticPlanner()
+            self._last_resolved_provider = "huggingface"
+            return HuggingFaceSemanticPlanner()
         except Exception:
-            self._last_resolved_provider = "heuristic"
-            return self._heuristic
+            try:
+                self._last_resolved_provider = "openai"
+                return OpenAISemanticPlanner()
+            except Exception:
+                self._last_resolved_provider = "heuristic"
+                return self._heuristic
 
     def _canonicalize_intent(self, intent: ParsedIntent) -> ParsedIntent:
         schema = IntentSchema(

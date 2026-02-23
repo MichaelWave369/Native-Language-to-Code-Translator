@@ -1,89 +1,74 @@
-# Nevora English-to-Code Translator
+# Nevora Translator (English/Multilingual-to-Code)
 
-Translate natural-language ideas into starter code for Python, Blueprint, C++, C#, JavaScript, and GDScript.
+Nevora converts natural-language prompts into starter code for multiple targets (`python`, `blueprint`, `cpp`, `csharp`, `javascript`, `gdscript`) with optional AI planners, batch workflows, and engine asset integration.
 
-## Next phase (v17) implemented
+## Next phase (v18) implemented
 
-### 1) Full optimization pass
-- Added fast plan reuse with an internal plan cache (`_plan_cache`) to avoid repeated planning work for identical prompt/mode combinations.
-- Added per-item latency tracking (`elapsed_ms`) and report aggregation (`avg_elapsed_ms`) for batch profiling.
+### 1) MVP free-LLM planner path (Hugging Face)
+- Added `HuggingFaceSemanticPlanner` (`translator/planners/huggingface_planner.py`) using HF text2text generation.
+- Planner providers now support:
+  - `auto`
+  - `heuristic`
+  - `huggingface`
+  - `openai`
 
-### 2) AI swarm + speed features retained
-- Parallel batch execution with `--swarm-workers`.
-- Optional 12x12x12x12 lattice RAG acceleration with `--enable-rag-cache`.
-- VM-like sandbox execution with `--sandbox-command`.
+### 2) Core code + examples populated
+- Core translation logic remains in `translator/core.py` and CLI in `translator/cli.py`.
+- Added concrete example input/output pairs in `examples/pairs/`.
 
-### 3) Unreal/Unity asset manager integration
-- New engine-aware generation path that can use a **user asset library JSON**:
-  - `translate_with_asset_library(...)`
-  - `export_engine_asset_manifest(...)`
-- Supports `engine=unreal` and `engine=unity`.
-- Asset matching uses prompt/token overlap and tag weighting to select best assets from the user’s library.
+### 3) Dependencies expanded
+- Base dependencies now include `joblib`, `faiss-cpu`, and `streamlit`.
+- Optional LLM dependencies include `openai`, `transformers`, `torch`, `accelerate`.
 
-### 4) CLI support for engine asset flows
-- Added:
-  - `--engine {unreal,unity}`
-  - `--asset-library <path>`
-  - `--asset-budget <n>`
-  - `--export-engine-manifest <path>`
-- When engine/library args are provided, CLI prints selected assets and can emit engine manifest JSON.
+### 4) Evaluation upgraded
+- `eval/run_eval.py` now reports:
+  - structure checks,
+  - intent coverage,
+  - determinism,
+  - syntax validity,
+  - BLEU-like similarity,
+  - buildability.
 
+### 5) Enhancements
+- Streamlit web UI MVP added in `app.py`.
+- Godot target support remains available via `gdscript` output and scaffold support.
 
-### 5) Built-in AI assistant guidance
-- Added assistant guidance API to help users operate the system effectively:
-  - `assistant_guide(...)` returns prompt diagnostics, intent preview, optimization tips, quality tips, and a suggested CLI command.
-  - `warm_plan_cache(...)` preloads generation plans to reduce first-hit latency for known prompt sets.
-- New CLI options:
-  - `--assistant-guide`
-  - `--assistant-report <batch_report.json>`
-  - `--warm-cache-file <prompts.txt>`
-  - `--assistant-report-advice`
+### 6) Community + OSS foundations
+- Added `CONTRIBUTING.md`.
+- Added `LICENSE` (MIT).
 
+## Installation
 
-### 6) Assistant-driven optimization advisor
-- Added report-aware optimization advisor:
-  - `analyze_batch_report(...)` summarizes speed/quality health and returns optimization recommendations.
-  - `suggest_swarm_workers(...)` auto-suggests concurrency based on batch size and available CPU.
-- Added CLI support:
-  - `--assistant-report-advice` (requires `--assistant-report`)
-  - `--swarm-workers 0` now means auto-select workers.
-- Batch reports now include `p95_elapsed_ms` for tail-latency visibility.
-
-
-### 7) Assistant runbook + swarm benchmarking
-- Added `benchmark_swarm_configs(...)` to quickly compare worker candidates and pick best-performing concurrency.
-- Added `generate_assistant_runbook(...)` to emit a structured operational runbook (checklist + commands + assistant guide).
-- New CLI flags:
-  - `--benchmark-swarm`
-  - `--benchmark-workers 1,2,4`
-  - `--assistant-runbook-file artifacts/runbook.json`
-
-## Asset library format
-
-```json
-{
-  "unreal": [
-    {"id": "SM_Enemy", "name": "Enemy Mesh", "tags": ["enemy", "mesh"], "path": "/Game/Meshes/SM_Enemy"}
-  ],
-  "unity": [
-    {"id": "PlayerPrefab", "name": "Player Prefab", "tags": ["player", "jump"], "path": "Assets/Prefabs/Player.prefab"}
-  ]
-}
+```bash
+pip install -r requirements.txt
+# optional AI planners
+pip install -r requirements-llm.txt
 ```
 
-## Unreal asset-aware example
+## CLI quick start
 
 ```bash
 python -m translator.cli \
+  --planner-provider huggingface \
   --target python \
-  --engine unreal \
-  --asset-library ./my_assets.json \
-  --asset-budget 5 \
-  --prompt "Spawn enemy and play hit sound" \
-  --export-engine-manifest artifacts/unreal_manifest.json
+  --prompt "When player presses space, jump and play sound"
 ```
 
-## Unity asset-aware example
+## Streamlit web UI
+
+```bash
+streamlit run app.py
+```
+
+## Prompt engineering tips (edge-case handling)
+To avoid vague outputs:
+- Include **entity + action + condition**: e.g., “When player health reaches zero, play death animation and respawn after 3 seconds.”
+- Name environment constraints: “For Unity C#, avoid external packages.”
+- Ask for expected outputs explicitly: “Also log result and update UI text.”
+- For multilingual prompts, include key technical terms in English if needed.
+
+## Asset manager integration (Unreal/Unity)
+Use engine-aware generation against your own asset library:
 
 ```bash
 python -m translator.cli \
@@ -93,6 +78,13 @@ python -m translator.cli \
   --prompt "Player jump controller" \
   --export-engine-manifest artifacts/unity_manifest.json
 ```
+
+## Batch + assistant optimization features
+- Auto swarm tuning with `--swarm-workers 0`
+- Swarm benchmark with `--benchmark-swarm --benchmark-workers 1,2,4`
+- Assistant guidance with `--assistant-guide`
+- Report advice with `--assistant-report-advice`
+- Runbook output with `--assistant-runbook-file`
 
 ## Evaluation
 
