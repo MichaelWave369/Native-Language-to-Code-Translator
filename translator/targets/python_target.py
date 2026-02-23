@@ -7,17 +7,51 @@ class PythonRenderer:
     name = "python"
 
     def render(self, prompt: str, intent: ParsedIntent, mode: str = "gameplay", plan=None) -> str:
-        return f'''"""Auto-generated from English prompt.
+        actions = ", ".join(intent.actions)
+        return f'''"""Beginner-friendly generated starter.
+
+What this file contains:
+1) A short metadata block so you know where this came from.
+2) A `GeneratedFeature` class you can rename.
+3) A `run(...)` method where your event logic executes.
+
 Prompt: {prompt}
-Mode: {mode}\nIR: {plan.ir.side_effects if plan else []}
+Mode: {mode}
+IR: {plan.ir.side_effects if plan else []}
 """
 
+# Standard library import used for type hints in this starter.
+from typing import Dict, Any
+
+
 class GeneratedFeature:
+    """A simple feature container.
+
+    - `entities` tracks the core game/app objects this prompt mentioned.
+    - `outputs` tracks expected output channels (state/log/ui/etc).
+    """
+
     def __init__(self):
+        # Store parsed intent so beginners can inspect what was extracted.
         self.entities = {intent.entities!r}
         self.outputs = {intent.outputs!r}
 
-    def run(self, event: dict) -> None:
-        if event.get("type") in ("input", "tick", "request"):
-            print("Actions: {', '.join(intent.actions)}")
+    def run(self, event: Dict[str, Any]) -> None:
+        """Handle one incoming event.
+
+        Expected event example:
+        {{"type": "input", "key": "Space"}}
+        """
+        # Guard clause: only process known event categories.
+        if event.get("type") not in ("input", "tick", "request"):
+            return
+
+        # Main action line generated from your prompt.
+        print("Actions: {actions}")
+
+
+if __name__ == "__main__":
+    # Quick beginner demo entrypoint.
+    feature = GeneratedFeature()
+    feature.run({{"type": "input", "key": "Space"}})
 '''

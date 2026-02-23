@@ -2,7 +2,7 @@
 
 Nevora converts natural-language prompts into starter code for multiple targets (`python`, `blueprint`, `cpp`, `csharp`, `javascript`, `gdscript`) with optional AI planners, batch workflows, and engine asset integration.
 
-## Next phase (v18) implemented
+## Next phase (v19) implemented
 
 ### 1) MVP free-LLM planner path (Hugging Face)
 - Added `HuggingFaceSemanticPlanner` (`translator/planners/huggingface_planner.py`) using HF text2text generation.
@@ -36,6 +36,12 @@ Nevora converts natural-language prompts into starter code for multiple targets 
 ### 6) Community + OSS foundations
 - Added `CONTRIBUTING.md`.
 - Added `LICENSE` (MIT).
+
+
+### 8) Non-technical user UX improvements
+- Assistant guide is now hidden by default in the web UI to keep first-time usage simple.
+- Generated code templates are more complete and beginner-friendly with inline comments explaining each section.
+- Added a simple **Copy Code** button in the Streamlit UI for easy copy/paste into editors.
 
 ## Installation
 

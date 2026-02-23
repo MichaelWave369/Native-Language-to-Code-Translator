@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-
 import streamlit as st
 
 from translator.core import EnglishToCodeTranslator
@@ -16,7 +15,7 @@ with st.sidebar:
     mode = st.selectbox("Mode", ["gameplay", "automation", "video-processing", "web-backend"], index=0)
     target = st.selectbox("Target", ["python", "blueprint", "cpp", "csharp", "javascript", "gdscript"], index=0)
     use_rag_cache = st.checkbox("Use lattice RAG cache", value=False)
-    show_guide = st.checkbox("Show assistant guide", value=True)
+    show_guide = st.checkbox("Show assistant guide", value=False)  # hidden by default for non-technical users
 
 prompt = st.text_area("Prompt", "When player presses space, jump and play sound", height=140)
 
@@ -29,8 +28,19 @@ if st.button("Generate"):
         source_language=source_language,
         use_rag_cache=use_rag_cache,
     )
+
     st.subheader("Generated Output")
     st.code(output)
+
+    # Simple copy-code UX for non-technical users.
+    st.markdown("### Copy code")
+    st.components.v1.html(
+        f"""
+        <textarea id=\"nevora_code\" style=\"width:100%;height:180px;\">{output}</textarea>
+        <button onclick=\"navigator.clipboard.writeText(document.getElementById('nevora_code').value)\" style=\"margin-top:8px;\">Copy Code</button>
+        """,
+        height=240,
+    )
 
     if show_guide:
         guide = translator.assistant_guide(
