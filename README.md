@@ -2,7 +2,7 @@
 
 Nevora converts natural-language prompts into starter code for multiple targets (`python`, `blueprint`, `cpp`, `csharp`, `javascript`, `gdscript`) with optional AI planners, batch workflows, and engine asset integration.
 
-## Next phase (v23) implemented
+## Next phase (v24) implemented
 
 ### 1) MVP free-LLM planner path (Hugging Face)
 - Added `HuggingFaceSemanticPlanner` (`translator/planners/huggingface_planner.py`) using HF text2text generation.
@@ -95,6 +95,28 @@ Nevora converts natural-language prompts into starter code for multiple targets 
   - Events
   - Main (runnable pygame starter)
 - Includes one-click copy for the full multi-file starter project output.
+
+
+### 13) Multi-template World Builder project types
+- World Builder now supports selectable project types:
+  - 🎮 Game World
+  - 🏪 Small Business App
+  - 📱 Personal Tool
+  - 🤖 Automation Bot
+  - 📊 Dashboard
+- Each project type has its own 4-stage guided flow with clickable examples.
+- For example:
+  - Small Business App stages:
+    1. What's your business?
+    2. What do you need to manage?
+    3. Who uses it?
+    4. What should it do automatically?
+  - Personal Tool stages:
+    1. What problem are you solving?
+    2. What information do you want to track?
+    3. How often do you use it?
+    4. What should it show or tell you?
+- Build button now adapts (`Build My World` or `Build My App`) and sends all 4 stages to Claude as one structured request.
 
 ## Installation
 

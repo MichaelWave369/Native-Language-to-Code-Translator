@@ -546,7 +546,7 @@ def test_world_builder_parse_response_valid() -> None:
 
     raw = '{"environment":"env code","characters":"char code","rules":"rules code","events":"events code","main":"main code"}'
     parsed = parse_world_builder_response(raw)
-    assert parsed["environment"] == "env code"
+    assert parsed["section_one"] == "env code"
     assert parsed["main"] == "main code"
 
 
@@ -555,3 +555,20 @@ def test_world_builder_parse_response_missing_keys() -> None:
 
     with pytest.raises(RuntimeError):
         parse_world_builder_response('{"environment":"x"}')
+
+
+
+def test_structured_project_prompt_requires_4_stages() -> None:
+    from translator.generators.world_builder import build_structured_project_prompt
+
+    with pytest.raises(ValueError):
+        build_structured_project_prompt("Test", [("one", "x")])
+
+
+def test_world_builder_parse_legacy_format() -> None:
+    from translator.generators.world_builder import parse_world_builder_response
+
+    legacy = '{"environment":"env","characters":"chars","rules":"rules","events":"events","main":"main"}'
+    parsed = parse_world_builder_response(legacy)
+    assert parsed["section_one"] == "env"
+    assert parsed["section_four"] == "events"

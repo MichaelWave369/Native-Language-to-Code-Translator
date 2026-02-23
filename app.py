@@ -4,7 +4,7 @@ import streamlit as st
 
 from translator.core import EnglishToCodeTranslator
 from translator.generators.multi_codegen import generate_code
-from translator.generators.world_builder import generate_world_with_claude
+from translator.generators.world_builder import generate_structured_project_with_claude
 
 
 CATEGORY_EXAMPLES = {
@@ -64,32 +64,139 @@ CATEGORY_EXAMPLES = {
     },
 }
 
-WORLD_STAGE_EXAMPLES = {
-    "environment": [
-        "Mystic forest with glowing trees and floating ruins",
-        "Space station orbiting a dying star",
-        "Ancient dungeon with lava rivers",
-        "Cyberpunk city with neon rain",
-    ],
-    "characters": [
-        "Player explorer, shadow enemies, merchant NPC",
-        "Pilot hero, drone swarms, station engineer NPC",
-        "Knight player, skeleton enemies, trapped villagers",
-        "Hacker player, corporate bots, resistance contact NPC",
-    ],
-    "rules": [
-        "Low gravity, health system, score for relics, day/night cycle",
-        "Energy shields, oxygen timer, score by surviving waves",
-        "Heavy gravity, stamina + health bars, checkpoint respawn",
-        "Fast movement, stealth meter, dynamic wanted level",
-    ],
-    "events": [
-        "Enemies ambush at night, relic items spawn every minute",
-        "Meteor storms trigger system failures and enemy waves",
-        "Trap rooms activate, healing item drops after boss phase",
-        "Weather glitches alter visibility and spawn elite enemies",
-    ],
+PROJECT_TYPE_CONFIG = {
+    "game_world": {
+        "label": "🎮 Game World",
+        "build_button": "Build My World",
+        "stage_titles": [
+            "Environment — what does the world look like?",
+            "Characters — who or what is in the world?",
+            "Rules — how does the world work?",
+            "Events — what happens?",
+        ],
+        "examples": [
+            [
+                "Mystic forest with glowing trees and floating ruins",
+                "Space station orbiting a dying star",
+                "Ancient dungeon with lava rivers",
+                "Cyberpunk city with neon rain",
+            ],
+            [
+                "Player explorer, shadow enemies, merchant NPC",
+                "Pilot hero, drone swarms, station engineer NPC",
+                "Knight player, skeleton enemies, trapped villagers",
+                "Hacker player, corporate bots, resistance contact NPC",
+            ],
+            [
+                "Low gravity, health system, score for relics, day/night cycle",
+                "Energy shields, oxygen timer, score by surviving waves",
+                "Heavy gravity, stamina + health bars, checkpoint respawn",
+                "Fast movement, stealth meter, dynamic wanted level",
+            ],
+            [
+                "Enemies ambush at night, relic items spawn every minute",
+                "Meteor storms trigger system failures and enemy waves",
+                "Trap rooms activate, healing item drops after boss phase",
+                "Weather glitches alter visibility and spawn elite enemies",
+            ],
+        ],
+        "defaults": [
+            "Mystic forest with glowing trees",
+            "Player ranger, wolf enemies, guide NPC",
+            "Health bar, score by collecting runes, day/night cycle",
+            "Wolves attack at night, rune items respawn every 30 seconds",
+        ],
+    },
+    "small_business_app": {
+        "label": "🏪 Small Business App",
+        "build_button": "Build My App",
+        "stage_titles": [
+            "What's your business?",
+            "What do you need to manage?",
+            "Who uses it?",
+            "What should it do automatically?",
+        ],
+        "examples": [
+            ["Neighborhood restaurant", "Hair salon", "Online boutique shop", "Freelance design studio"],
+            ["Bookings and customer queue", "Inventory and suppliers", "Customers and loyalty", "Invoices and payments"],
+            ["Just me", "My staff", "My customers", "Staff and customers"],
+            ["Send reminders", "Track stock", "Generate reports", "Flag overdue invoices"],
+        ],
+        "defaults": [
+            "Neighborhood restaurant",
+            "Bookings, customers, and invoices",
+            "My staff",
+            "Send reminders and generate reports",
+        ],
+    },
+    "personal_tool": {
+        "label": "📱 Personal Tool",
+        "build_button": "Build My App",
+        "stage_titles": [
+            "What problem are you solving?",
+            "What information do you want to track?",
+            "How often do you use it?",
+            "What should it show or tell you?",
+        ],
+        "examples": [
+            ["I forget daily habits", "I lose track of spending", "I miss assignment deadlines", "I need better workout consistency"],
+            ["Habit streaks and notes", "Income and expenses", "Tasks and due dates", "Workout sets and progress"],
+            ["Every day", "A few times per week", "Only on weekdays", "Once per week"],
+            ["Daily summary", "Alerts when I miss a goal", "Weekly trend chart", "Simple progress score"],
+        ],
+        "defaults": [
+            "I forget daily habits",
+            "Habit streaks and notes",
+            "Every day",
+            "Daily summary and alerts when streak drops",
+        ],
+    },
+    "automation_bot": {
+        "label": "🤖 Automation Bot",
+        "build_button": "Build My App",
+        "stage_titles": [
+            "What workflow should be automated?",
+            "What inputs does it need?",
+            "When should it run?",
+            "What output or alert should it produce?",
+        ],
+        "examples": [
+            ["Process incoming support emails", "Organize downloaded invoices", "Backup project folders", "Sync CRM leads to spreadsheet"],
+            ["Email subject/body", "Folder path and file names", "Source and backup paths", "CSV exports"],
+            ["Every 10 minutes", "At end of day", "Every hour", "On file change"],
+            ["Send Slack alert", "Generate summary report", "Write logs", "Create exception list"],
+        ],
+        "defaults": [
+            "Organize downloaded invoices",
+            "Folder path and file names",
+            "At end of day",
+            "Generate summary report and send alert",
+        ],
+    },
+    "dashboard": {
+        "label": "📊 Dashboard",
+        "build_button": "Build My App",
+        "stage_titles": [
+            "What is this dashboard for?",
+            "What metrics should it show?",
+            "Who will view it?",
+            "What insights/alerts should it provide?",
+        ],
+        "examples": [
+            ["Sales performance", "Marketing campaign health", "Support team operations", "Personal productivity"],
+            ["Revenue, orders, conversion", "CTR, CPC, spend", "Tickets opened/closed", "Tasks done and focus time"],
+            ["Founder only", "Team leads", "Operations staff", "Clients"],
+            ["Highlight anomalies", "Weekly trends", "Low-performance alerts", "Top opportunities"],
+        ],
+        "defaults": [
+            "Sales performance",
+            "Revenue, orders, conversion",
+            "Team leads",
+            "Highlight anomalies and weekly trends",
+        ],
+    },
 }
+
 
 
 st.set_page_config(page_title="Nevora Translator", layout="wide")
@@ -118,14 +225,13 @@ if "selected_category" not in st.session_state:
     st.session_state.selected_category = "game_mechanics"
 if "prompt_input" not in st.session_state:
     st.session_state.prompt_input = "When player presses space, jump and play sound"
-for key, default in {
-    "world_environment": "Mystic forest with glowing trees",
-    "world_characters": "Player ranger, wolf enemies, guide NPC",
-    "world_rules": "Health bar, score by collecting runes, day/night cycle",
-    "world_events": "Wolves attack at night, rune items respawn every 30 seconds",
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+if "world_project_type" not in st.session_state:
+    st.session_state.world_project_type = "game_world"
+for project_key, config in PROJECT_TYPE_CONFIG.items():
+    for idx, default_value in enumerate(config["defaults"], start=1):
+        state_key = f"{project_key}_stage_{idx}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = default_value
 
 with st.sidebar:
     ui_mode = st.radio("Mode", ["Quick Generate", "World Builder"], index=0)
@@ -235,54 +341,66 @@ if ui_mode == "Quick Generate":
 
 else:
     st.markdown("## 🌍 World Builder")
-    st.markdown("Build your world stage-by-stage, then click **Build My World**.")
+    st.markdown("Choose a project type, complete 4 stages, then click build.")
 
-    def _stage_ui(stage_key: str, title: str, state_key: str) -> None:
-        st.markdown(f"### {title}")
+    project_cols = st.columns(5)
+    project_keys = list(PROJECT_TYPE_CONFIG.keys())
+    for idx, project_key in enumerate(project_keys):
+        config = PROJECT_TYPE_CONFIG[project_key]
+        selected = st.session_state.world_project_type == project_key
+        label = f"✅ {config['label']}" if selected else config["label"]
+        if project_cols[idx].button(label, use_container_width=True, key=f"ptype_{project_key}"):
+            st.session_state.world_project_type = project_key
+
+    selected_project_key = st.session_state.world_project_type
+    selected_project = PROJECT_TYPE_CONFIG[selected_project_key]
+
+    def _stage_ui(stage_index: int, title: str, state_key: str, examples: list[str]) -> None:
+        st.markdown(f"### {stage_index}) {title}")
         cols = st.columns(4)
-        for i, ex in enumerate(WORLD_STAGE_EXAMPLES[stage_key]):
-            if cols[i].button(ex, use_container_width=True, key=f"wb_{stage_key}_{i}"):
+        for i, ex in enumerate(examples):
+            if cols[i].button(ex, use_container_width=True, key=f"wb_{selected_project_key}_{stage_index}_{i}"):
                 st.session_state[state_key] = ex
         st.text_area("", key=state_key, height=90)
 
-    _stage_ui("environment", "1) Environment — what does the world look like?", "world_environment")
-    _stage_ui("characters", "2) Characters — who or what is in the world?", "world_characters")
-    _stage_ui("rules", "3) Rules — how does the world work?", "world_rules")
-    _stage_ui("events", "4) Events — what happens?", "world_events")
+    stage_values: list[tuple[str, str]] = []
+    for idx, stage_title in enumerate(selected_project["stage_titles"], start=1):
+        state_key = f"{selected_project_key}_stage_{idx}"
+        _stage_ui(idx, stage_title, state_key, selected_project["examples"][idx - 1])
+        stage_values.append((stage_title, st.session_state[state_key]))
 
-    if st.button("Build My World", type="primary"):
+    if st.button(selected_project["build_button"], type="primary"):
         if generation_engine != "claude-haiku-4-5 (default)":
-            st.warning("World Builder currently uses Claude for best project assembly. Switching provider to Claude for this run.")
+            st.warning("Structured World Builder currently uses Claude for best assembly. Switching to Claude for this run.")
 
         try:
-            sections = generate_world_with_claude(
-                environment=st.session_state.world_environment,
-                characters=st.session_state.world_characters,
-                rules=st.session_state.world_rules,
-                events=st.session_state.world_events,
+            sections = generate_structured_project_with_claude(
+                project_type=selected_project["label"],
+                stages=stage_values,
                 model=model_name or "claude-haiku-4-5",
             )
         except Exception as exc:
             st.error(f"World Builder generation failed: {exc}. Ensure ANTHROPIC_API_KEY is set.")
             st.stop()
 
-        st.success("World generated. Review each section below.")
-        st.subheader("Environment")
-        st.code(sections["environment"], language="python")
-        st.subheader("Characters")
-        st.code(sections["characters"], language="python")
-        st.subheader("Rules")
-        st.code(sections["rules"], language="python")
-        st.subheader("Events")
-        st.code(sections["events"], language="python")
-        st.subheader("Main (runnable pygame starter)")
+        labels = [selected_project["stage_titles"][0], selected_project["stage_titles"][1], selected_project["stage_titles"][2], selected_project["stage_titles"][3]]
+        st.success("Project generated. Review each section below.")
+        st.subheader(labels[0])
+        st.code(sections["section_one"], language="python")
+        st.subheader(labels[1])
+        st.code(sections["section_two"], language="python")
+        st.subheader(labels[2])
+        st.code(sections["section_three"], language="python")
+        st.subheader(labels[3])
+        st.code(sections["section_four"], language="python")
+        st.subheader("Main (runnable starter)")
         st.code(sections["main"], language="python")
 
         combined = (
-            "# environment.py\n" + sections["environment"]
-            + "\n\n# characters.py\n" + sections["characters"]
-            + "\n\n# rules.py\n" + sections["rules"]
-            + "\n\n# events.py\n" + sections["events"]
+            "# section_one.py\n" + sections["section_one"]
+            + "\n\n# section_two.py\n" + sections["section_two"]
+            + "\n\n# section_three.py\n" + sections["section_three"]
+            + "\n\n# section_four.py\n" + sections["section_four"]
             + "\n\n# main.py\n" + sections["main"]
         )
         st.markdown("### Copy full starter project")
