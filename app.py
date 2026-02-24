@@ -6,6 +6,7 @@ import streamlit as st
 
 from translator.core import EnglishToCodeTranslator
 from translator.generators.anthropic_codegen import explain_code_with_claude
+from translator.generators.github_export import push_text_file_to_github
 from translator.generators.multi_codegen import generate_code
 from translator.generators.project_packager import package_single_file_project, package_world_builder_project
 from translator.generators.world_builder import generate_structured_project
@@ -260,7 +261,34 @@ with st.sidebar:
     use_rag_cache = st.checkbox("Use lattice RAG cache (fallback engine only)", value=False)
     show_guide = st.checkbox("Show assistant guide", value=False)
 
+    st.markdown("---")
+    st.caption("GitHub export")
+    github_repo = st.text_input("GitHub repo (owner/repo)", "")
+    github_branch = st.text_input("GitHub branch", "main")
+    github_output_path = st.text_input("GitHub output path", "generated/main.py")
+
 translator = EnglishToCodeTranslator(planner_provider="auto")
+
+
+def _render_github_button(label: str, key: str, content: str, default_commit_message: str) -> None:
+    if st.button(label, key=key, use_container_width=True):
+        if not github_repo.strip():
+            st.warning("Enter a GitHub repo in owner/repo format first.")
+            return
+        try:
+            url = push_text_file_to_github(
+                owner_repo=github_repo.strip(),
+                file_path=github_output_path.strip() or "generated/main.py",
+                content=content,
+                commit_message=default_commit_message,
+                branch=github_branch.strip() or "main",
+            )
+            if url:
+                st.success(f"Pushed to GitHub: {url}")
+            else:
+                st.success("Pushed to GitHub successfully.")
+        except Exception as exc:
+            st.error(f"GitHub export failed: {exc}. Set GITHUB_TOKEN and verify repo permissions.")
 
 if ui_mode == "Quick Generate":
     st.markdown('<div class="nevora-card-title">Choose a category</div>', unsafe_allow_html=True)
@@ -336,6 +364,12 @@ if ui_mode == "Quick Generate":
             file_name="nevora_project.zip",
             mime="application/zip",
             use_container_width=True,
+        )
+        _render_github_button(
+            label="Push Output to GitHub",
+            key="github_push_quick",
+            content=output,
+            default_commit_message=f"Nevora output: {target} prompt",
         )
 
         st.markdown("### Copy code")
@@ -469,6 +503,12 @@ else:
             mime="application/zip",
             use_container_width=True,
         )
+        _render_github_button(
+            label="Push Output to GitHub",
+            key="github_push_world",
+            content=combined,
+            default_commit_message=f"Nevora World Builder output: {selected_project['label']}",
+        )
 
         st.subheader("Explain My Code")
         try:
@@ -482,5 +522,5 @@ else:
             st.info(f"Code explanation unavailable right now: {exc}")
 
 st.caption(
-    "Tip: run with `streamlit run app.py`. Keys: ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GEMINI_API_KEY; local Ollama uses OLLAMA_BASE_URL."
+    "Tip: run with `streamlit run app.py`. Keys: ANTHROPIC_API_KEY, OPENAI_API_KEY, XAI_API_KEY, GEMINI_API_KEY; local Ollama uses OLLAMA_BASE_URL. Also supports GITHUB_TOKEN for GitHub export."
 )

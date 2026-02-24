@@ -192,3 +192,9 @@ python eval/run_eval.py
 pip install -r requirements-llm.txt
 mypy translator
 ```
+
+
+## GitHub export button
+- Streamlit now includes **Push Output to GitHub** after generation (Quick Generate + World Builder).
+- Configure sidebar fields: `owner/repo`, branch, and output path.
+- Set `GITHUB_TOKEN` with repo write permissions before using the button.
