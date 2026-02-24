@@ -9,7 +9,6 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from hashlib import sha256
-from datetime import datetime, timezone
 from time import perf_counter
 from pathlib import Path
 from typing import Any, Optional
@@ -29,6 +28,7 @@ from translator.models import (
 from translator.planners.heuristic import HeuristicPlanner
 from translator.planners.openai_planner import OpenAISemanticPlanner
 from translator.planners.huggingface_planner import HuggingFaceSemanticPlanner
+from translator.services import BatchReportService, validate_ordered_results
 from translator.targets.registry import build_registry
 
 
@@ -136,6 +136,7 @@ class EnglishToCodeTranslator:
         self._rag_lattice: dict[tuple[int, int, int, int], list[dict[str, str]]] = {}
         self._plan_cache: dict[tuple[str, str], GenerationPlan] = {}
         self.lattice_shape = (12, 12, 12, 12)
+        self._batch_report_service = BatchReportService(self.lattice_shape)
 
     @property
     def supported_targets(self) -> set[str]:
@@ -907,61 +908,14 @@ class EnglishToCodeTranslator:
                 if idx in ordered:
                     results.append(ordered[idx])
 
-        expected = list(range(len(results)))
-        actual = [int(item.get("index", -1)) for item in results]
-        if actual != expected:
-            raise RuntimeError(f"translate_batch ordering mismatch: expected {expected} got {actual}")
+        validate_ordered_results(results)
         return results
 
     def write_batch_report(self, batch_results: list[dict[str, Any]], output_file: str) -> str:
         """Write batch results and aggregate metrics to JSON."""
         destination = Path(output_file)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        ok_count = sum(1 for r in batch_results if r.get("ok"))
-        failed_count = sum(1 for r in batch_results if not r.get("ok"))
-        verify_output_ok_count = sum(1 for r in batch_results if r.get("verify_output_ok") is True)
-        verify_build_ok_count = sum(1 for r in batch_results if r.get("verify_build_ok") is True)
-
-        target_counts: dict[str, int] = {}
-        provider_counts: dict[str, int] = {}
-        source_language_counts: dict[str, int] = {}
-        lattice_bucket_counts: dict[str, int] = {}
-        for item in batch_results:
-            target = str(item.get("target", "unknown"))
-            provider = str(item.get("resolved_provider", "unknown"))
-            source_language = str(item.get("source_language", "unknown"))
-            target_counts[target] = target_counts.get(target, 0) + 1
-            provider_counts[provider] = provider_counts.get(provider, 0) + 1
-            source_language_counts[source_language] = source_language_counts.get(source_language, 0) + 1
-            bucket = item.get("lattice_bucket")
-            if isinstance(bucket, list) and len(bucket) == 4:
-                key = "x".join(str(v) for v in bucket)
-                lattice_bucket_counts[key] = lattice_bucket_counts.get(key, 0) + 1
-
-        total = len(batch_results)
-        elapsed_values = sorted(float(item.get("elapsed_ms", 0.0)) for item in batch_results if item.get("ok") and item.get("elapsed_ms") is not None)
-        success_rate = (ok_count / total) if total else 0.0
-        verify_output_rate = (verify_output_ok_count / total) if total else 0.0
-        verify_build_rate = (verify_build_ok_count / total) if total else 0.0
-        summary = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "total": total,
-            "ok": ok_count,
-            "failed": failed_count,
-            "success_rate": round(success_rate, 4),
-            "verify_output_ok": verify_output_ok_count,
-            "verify_build_ok": verify_build_ok_count,
-            "verify_output_rate": round(verify_output_rate, 4),
-            "verify_build_rate": round(verify_build_rate, 4),
-            "target_counts": target_counts,
-            "resolved_provider_counts": provider_counts,
-            "source_language_counts": source_language_counts,
-            "lattice_shape": list(self.lattice_shape),
-            "lattice_bucket_counts": lattice_bucket_counts,
-            "avg_elapsed_ms": round(sum(elapsed_values) / len(elapsed_values), 3) if elapsed_values else 0.0,
-            "p95_elapsed_ms": round(elapsed_values[min(len(elapsed_values) - 1, int(0.95 * (len(elapsed_values) - 1)))], 3) if elapsed_values else 0.0,
-            "results": batch_results,
-        }
+        summary = self._batch_report_service.build_summary(batch_results)
         destination.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         return str(destination)
 

@@ -654,3 +654,10 @@ def test_world_builder_fallback_provider_output_shape() -> None:
         provider="nevora-template-fallback",
     )
     assert set(sections.keys()) == {"section_one", "section_two", "section_three", "section_four", "main"}
+
+
+def test_python_renderer_uses_list_literals_for_entities_outputs() -> None:
+    translator = EnglishToCodeTranslator(planner=HeuristicPlanner())
+    out = translator.translate("Create a player that can jump", target="python")
+    assert "self.entities = [" in out
+    assert "self.outputs = [" in out
