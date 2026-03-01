@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import zipfile
 
-from translator import __version__
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - fallback for older environments
+    import tomli as tomllib  # type: ignore
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
@@ -25,6 +28,17 @@ EXCLUDE_PARTS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".git", ".venv",
 EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
 
 
+def _load_project_version() -> str:
+    pyproject_path = ROOT / "pyproject.toml"
+    with pyproject_path.open("rb") as fh:
+        data = tomllib.load(fh)
+
+    version = data.get("project", {}).get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise RuntimeError("Unable to read [project].version from pyproject.toml")
+    return version.strip()
+
+
 def _should_include(path: Path) -> bool:
     if any(part in EXCLUDE_PARTS for part in path.parts):
         return False
@@ -35,7 +49,8 @@ def _should_include(path: Path) -> bool:
 
 def main() -> None:
     DIST.mkdir(exist_ok=True)
-    out = DIST / f"nevora-translator-{__version__}.zip"
+    version = _load_project_version()
+    out = DIST / f"nevora-translator-{version}.zip"
 
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for rel in INCLUDE_PATHS:
